@@ -1,0 +1,20 @@
+{
+  "name": "hanzi-cards",
+  "version": "1.0.0",
+  "private": true,
+  "description": "Duolingo-style flash cards for learning Chinese characters with speech-based pronunciation practice.",
+  "type": "module",
+  "main": "server/index.js",
+  "scripts": {
+    "start": "node --disable-warning=ExperimentalWarning server/index.js",
+    "dev": "node --disable-warning=ExperimentalWarning --watch server/index.js",
+    "test": "node --disable-warning=ExperimentalWarning --test"
+  },
+  "engines": {
+    "node": ">=22.13"
+  },
+  "dependencies": {
+    "express": "^5.1.0",
+    "pinyin-pro": "^3.26.0"
+  }
+}
