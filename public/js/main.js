@@ -1,4 +1,4 @@
-import { api } from './api.js';
+import { api, storageIsPersistent } from './api.js';
 import { isFatalSpeechError, recognitionSupported, speechErrorMessage, startListening } from './speech.js';
 import { hasChineseVoice, speakChinese, ttsSupported } from './tts.js';
 import { playComplete, playFail, playPass, unlockAudio } from './sounds.js';
@@ -71,6 +71,12 @@ function setView(view) {
   document.body.dataset.view = view;
 }
 
+function deviceNote() {
+  return storageIsPersistent
+    ? '🔒 Your account and progress are saved in this browser on this device only.'
+    : '⚠️ This browser is blocking storage, so your account and progress will be lost when you close the tab.';
+}
+
 // ---------------------------------------------------------------------------
 // Auth
 // ---------------------------------------------------------------------------
@@ -99,6 +105,7 @@ function renderAuth(mode = 'login', { error = '', username = '' } = {}) {
           <div class="error" role="alert">${esc(error)}</div>
           <button class="btn btn-primary btn-block" type="submit">${isLogin ? 'Log in' : 'Create account'}</button>
         </form>
+        <p class="device-note">${deviceNote()}</p>
       </div>
     </main>`;
   app.querySelector(username ? 'input[name=password]' : 'input[name=username]')?.focus();
@@ -233,6 +240,7 @@ function renderHome() {
             : '<p class="muted">No sessions yet.</p>'
         }
       </section>
+      <p class="device-note">${deviceNote()} Clearing this site's data in your browser deletes it.</p>
     </main>`;
 }
 

@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 import { describe, it } from 'node:test';
-import { checkPronunciation } from '../server/checker.js';
-import { parseSyllable } from '../server/pinyin.js';
+import { checkPronunciation } from '../public/js/lib/checker.js';
+import { parseSyllable } from '../public/js/lib/pinyin.js';
 
 const ni = { hanzi: '你', pinyin: 'nǐ' };
 const ma = { hanzi: '妈', pinyin: 'mā' };

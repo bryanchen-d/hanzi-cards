@@ -1,8 +1,10 @@
 # Hanzi Cards
 
-A Duolingo-style web app for learning Chinese characters by pronouncing them out loud.
+A Duolingo-style web app for learning Chinese characters by pronouncing them out loud. It runs entirely in your browser.
 
-- **Accounts**: sign up / log in. Your progress is saved per user.
+**▶ Live: https://bryanchen-d.github.io/hanzi-cards/**
+
+- **Accounts**: sign up / log in. Each account's progress is saved separately, **in this browser on this device only** (see [Where your data lives](#where-your-data-lives)).
 - **Practice sessions**: one character card per turn. Before you answer, the card shows only the character: no pinyin, meaning or audio. Tap the mic once and say it.
   - ✓ **Correct**: as soon as the app hears the right pronunciation, it stops listening and shows a check mark with a "pass" sound. You don't need to press stop.
   - ✗ **Wrong**: if nothing you say matches within the time limit (**10 seconds** by default, adjustable to 5–20 s on the dashboard), the turn ends with a cross and a "wrong" sound, and the correct pronunciation is played.
@@ -10,28 +12,22 @@ A Duolingo-style web app for learning Chinese characters by pronouncing them out
 - **Spaced repetition**: every answer is recorded per character. The next card depends on your history. Missed and weak characters come back sooner, mastered ones less often, and new characters are mixed in gradually.
 - **Dashboard**: characters seen and mastered, accuracy, reviews due, a colour-coded grid of all 160 starter characters (common HSK 1–2), and recent sessions.
 
-## Requirements
+## Use it
 
-- Node.js **22.13 or newer**. The app uses the built-in `node:sqlite` module, so no native build step is needed.
-- A browser with the Web Speech API for speaking practice: **Chrome, Edge or Safari** (desktop, Android or iOS). Firefox has no speech recognition; there you can type the pinyin instead.
+Open **https://bryanchen-d.github.io/hanzi-cards/** in **Chrome, Edge or Safari** (desktop, Android or iOS). Create an account and press **Start practice**. The first time you tap the mic, the browser asks for microphone permission. Firefox has no speech recognition; there you can type the pinyin instead.
 
-## Run it
+## Run it locally
+
+Requires Node.js 20 or newer. Node is only used to fetch dependencies, run tests and serve the files.
 
 ```bash
-npm install
+npm install   # also copies pinyin-pro into public/vendor/
 npm start
 ```
 
-Open **http://localhost:3000**, create an account, and press **Start practice**. The first time you tap the mic, the browser asks for microphone permission.
+Then open **http://localhost:3000**. The preview server also serves the site at `/hanzi-cards/`, the same path as GitHub Pages. `PORT` and `HOST` change where it listens, and `npm run dev` restarts it when files change.
 
-| Variable | Default | Purpose |
-|---|---|---|
-| `PORT` | `3000` | HTTP port |
-| `HOST` | `localhost` | Interface to bind |
-| `HANZI_DB` | `./data/hanzi.db` | SQLite database file (created automatically) |
-| `SECURE_COOKIES` | unset | Set to `1` when serving over HTTPS |
-
-`npm run dev` restarts the server whenever files change.
+`public/` is a plain static site with no bundler. Any static file server works once `npm install` (or `npm run build`) has created `public/vendor/`.
 
 ## Tests
 
@@ -39,13 +35,24 @@ Open **http://localhost:3000**, create an account, and press **Start practice**.
 npm test
 ```
 
-These cover pinyin parsing and pronunciation checking (`test/checker.test.js`), spaced-repetition scheduling (`test/scheduler.test.js`), and the HTTP API: password hashing, register/login/logout, per-user isolation, and a full practice session (`test/api.test.js`).
+The tests cover:
+- pinyin parsing and pronunciation checking (`test/checker.test.js`)
+- spaced-repetition scheduling (`test/scheduler.test.js`)
+- the in-browser backend (`test/backend.test.js`): password hashing, register/login/logout, per-user isolation, persistence across page loads, a full practice session, live checks and timeouts
+
+## Deployment
+
+[`.github/workflows/pages.yml`](.github/workflows/pages.yml) runs on every push to `main`. It installs dependencies (which vendors pinyin-pro), runs the tests, and publishes `public/` to GitHub Pages.
 
 ## How it works
 
+Everything runs in the browser. [`public/js/lib/backend.js`](public/js/lib/backend.js) offers the async API the UI calls: register, login, stats, sessions, next card, check and answer. It stores its data in `localStorage` and uses the same checker and scheduler modules that the Node tests exercise.
+
 ### Pronunciation checking
 
-The browser's speech recogniser (`lang = zh-CN`, continuous with interim results) turns what you say into Chinese text, returning up to five alternatives for each phrase. While you speak, each new result is sent to `POST /api/sessions/:id/check`. That check records nothing, and the turn ends as correct the moment it matches. Browsers stop recognition by themselves after a pause, so the app restarts it until the time limit. When time runs out, everything heard is submitted and recorded as a wrong answer, unless it matches after all. The server ([`server/checker.js`](server/checker.js)) accepts an answer if any alternative:
+The browser's speech recogniser (`lang = zh-CN`, continuous with interim results) turns what you say into Chinese text, returning up to five alternatives for each phrase. Each new result is checked right away. Live checks record nothing, and the turn ends as correct the moment one matches. Browsers stop recognition by themselves after a pause, so the app restarts it until the time limit. When time runs out, everything heard is submitted and recorded as a wrong answer, unless it matches after all.
+
+[`public/js/lib/checker.js`](public/js/lib/checker.js) accepts an answer if any alternative:
 
 1. contains the target character, or
 2. contains a **homophone** with the same pinyin, using [`pinyin-pro`](https://github.com/zh-lx/pinyin-pro). For example, saying "tā" for 他 is accepted even if the recogniser writes 她.
@@ -54,7 +61,7 @@ Tones must match by default. When only the tone differs, the feedback says so. T
 
 ### Scheduling
 
-[`server/scheduler.js`](server/scheduler.js) uses Leitner boxes:
+[`public/js/lib/scheduler.js`](public/js/lib/scheduler.js) uses Leitner boxes:
 
 | Box | 1 | 2 | 3 | 4 | 5 (mastered) | 6 | 7 |
 |---|---|---|---|---|---|---|---|
@@ -65,52 +72,46 @@ Tones must match by default. When only the tone differs, the feedback says so. T
 - If nothing is due, the soonest-due card is reviewed early.
 - The last 3 cards shown are skipped, so the same character doesn't appear twice in a row.
 
+### Where your data lives
+
+- Accounts and progress are stored in the browser's `localStorage` under keys starting with `hanzi-cards:v1:`. Each account has a single JSON document with its per-character progress, sessions and recent attempts.
+- Nothing is sent to a server, so there is **no sync**. Another browser, another device or a private window starts empty. Clearing this site's data deletes all accounts and progress.
+- Passwords are hashed with PBKDF2-SHA-256 (Web Crypto, 210,000 iterations, random salt). The password itself is never stored. Anyone who can use this browser profile can still read the stored progress, so treat the login as a way to keep learners apart, not as security.
+- If the browser blocks storage (some private modes), the app warns that progress lasts only until the tab closes.
+
 ### Other details
 
 - **Correct pronunciation** is played with the browser's `speechSynthesis` using a zh-CN voice.
 - **Sound effects** are synthesised with the Web Audio API, so the app ships no audio files.
-- **Auth**: passwords are hashed with scrypt (Node `crypto`, random salt). Sessions use random tokens stored hashed in SQLite and sent as `HttpOnly`, `SameSite=Lax` cookies.
 
 ## Project layout
 
 ```
-server/
-  index.js           start the HTTP server
-  app.js             Express app and API routes
-  auth.js            password hashing, credential validation, session tokens
-  checker.js         pronunciation / answer checking
-  pinyin.js          pinyin syllable parsing (tone marks, tone numbers, ü)
-  scheduler.js       spaced-repetition logic
-  db.js, store.js    SQLite schema, seeding and queries
-  data/characters.js starter deck (160 characters, pinyin, meaning)
-public/              static front end (no build step)
-  index.html, styles.css
-  js/main.js         views and session flow
-  js/speech.js       speech recognition wrapper
-  js/tts.js          text-to-speech playback
-  js/sounds.js       pass / fail / complete sound effects
-test/                node:test suites
+public/                 the static site (deployed as-is)
+  index.html            import map for pinyin-pro, relative asset paths
+  styles.css
+  js/main.js            views and session flow
+  js/api.js             wires the UI to the in-browser backend
+  js/speech.js          continuous speech recognition with deadline
+  js/tts.js             text-to-speech playback
+  js/sounds.js          pass / fail / complete sound effects
+  js/lib/backend.js     accounts, progress, sessions (localStorage + Web Crypto)
+  js/lib/checker.js     pronunciation / answer checking
+  js/lib/pinyin.js      pinyin syllable parsing (tone marks, tone numbers, ü)
+  js/lib/scheduler.js   spaced-repetition logic
+  js/lib/characters.js  starter deck (160 characters, pinyin, meaning)
+  vendor/               generated by npm install (git-ignored)
+scripts/vendor.mjs      copies pinyin-pro's ES module build into public/vendor/
+server/index.js         local static preview server
+test/                   node:test suites
 ```
-
-## API
-
-| Method | Path | Description |
-|---|---|---|
-| `POST` | `/api/auth/register` | `{username, password}` → creates an account and logs in |
-| `POST` | `/api/auth/login` | `{username, password}` |
-| `POST` | `/api/auth/logout` | |
-| `GET` | `/api/auth/me` | current user, or `null` |
-| `GET` | `/api/stats` | totals, per-character progress, recent sessions |
-| `POST` | `/api/sessions` | `{size}` → starts a practice session (3–50 cards) |
-| `GET` | `/api/sessions/:id/next` | the current card, or a summary when the session is done |
-| `POST` | `/api/sessions/:id/check` | `{charId, transcripts[], ignoreTones?}` → `{correct, matchType}` for a live check while listening; nothing is recorded |
-| `POST` | `/api/sessions/:id/answer` | `{charId, transcripts[], ignoreTones?, skipped?, timedOut?}` → result and updated progress |
 
 ## Limitations
 
+- **Device-only progress**: see [Where your data lives](#where-your-data-lives). There's no cloud sync, and no export yet.
 - **Browser support**: speech recognition works in Chrome, Edge and Safari, but not in Firefox. Firefox users get the type-the-pinyin fallback.
 - **Online recognition**: Chrome and Edge send the audio to their cloud speech service, so speaking practice needs an internet connection. Safari may need Siri/Dictation enabled.
-- **Secure context**: the microphone works only on `https://` or `http://localhost`. To use the app from another device on your network, serve it over HTTPS.
+- **Secure context**: the microphone and Web Crypto work only on `https://` (such as GitHub Pages) or `http://localhost`.
 - **Tones**: the check relies on what the recogniser *thinks* you said. It works well for clear speech, but it is not a phonetic tone analyser. Single syllables are sometimes misheard, and the recogniser's language model can "fix" a wrong tone into the right character. Use **Ignore tones** if strict checking gets frustrating.
 - **Leniency while listening**: any matching syllable heard during the time limit counts. Saying many different syllables in a row can therefore hit a homophone by chance.
 - **Multiple readings**: characters with several readings are taught with their most common one (for example 的 = de). Saying the character itself is always accepted.

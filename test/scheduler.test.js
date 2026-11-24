@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import { describe, it } from 'node:test';
-import { BOX_INTERVALS, MAX_LEARNING, MINUTE, applyResult, pickNext } from '../server/scheduler.js';
+import { BOX_INTERVALS, MAX_LEARNING, MINUTE, applyResult, pickNext } from '../public/js/lib/scheduler.js';
 
 const NOW = 1_000_000_000;
 const deck = Array.from({ length: 10 }, (_, i) => ({ id: i + 1, hanzi: String(i + 1) }));

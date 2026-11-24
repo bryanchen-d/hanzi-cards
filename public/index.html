@@ -7,11 +7,12 @@
     <meta name="description" content="Duolingo-style flash cards for learning Chinese characters with pronunciation practice.">
     <meta name="theme-color" content="#58cc02">
     <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 64 64'%3E%3Crect width='64' height='64' rx='14' fill='%2358cc02'/%3E%3Ctext x='32' y='46' font-size='40' text-anchor='middle' fill='white' font-family='sans-serif'%3E%E6%B1%89%3C/text%3E%3C/svg%3E">
-    <link rel="stylesheet" href="/styles.css">
+    <link rel="stylesheet" href="./styles.css">
+    <script type="importmap">{ "imports": { "pinyin-pro": "./vendor/pinyin-pro/index.mjs" } }</script>
   </head>
   <body data-view="loading">
     <div id="app"><div class="spinner" aria-label="Loading"></div></div>
     <noscript>Hanzi Cards needs JavaScript.</noscript>
-    <script type="module" src="/js/main.js"></script>
+    <script type="module" src="./js/main.js"></script>
   </body>
 </html>

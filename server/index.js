@@ -1,26 +1,21 @@
+// Local preview server for the static site in public/.
+// It is served at both / and /hanzi-cards/ (the GitHub Pages path), so relative-path bugs show up locally.
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { createApp } from './app.js';
-import { openDatabase } from './db.js';
+import express from 'express';
 
-const root = path.join(path.dirname(fileURLToPath(import.meta.url)), '..');
+const publicDir = path.join(path.dirname(fileURLToPath(import.meta.url)), '..', 'public');
 const port = Number(process.env.PORT) || 3000;
 const host = process.env.HOST || 'localhost';
-const dbFile = process.env.HANZI_DB || path.join(root, 'data', 'hanzi.db');
 
-const db = openDatabase(dbFile);
-const app = createApp({ db, secureCookies: process.env.SECURE_COOKIES === '1' });
+const app = express();
+app.disable('x-powered-by');
+app.use(['/hanzi-cards', '/'], express.static(publicDir));
 
 const server = app.listen(port, host, () => {
-  console.log(`Hanzi Cards running at http://${host}:${port}`);
-  console.log(`Database: ${dbFile}`);
+  console.log(`Hanzi Cards preview at http://${host}:${port}/ (also /hanzi-cards/)`);
 });
 
-function shutdown() {
-  server.close(() => {
-    db.close();
-    process.exit(0);
-  });
-}
+const shutdown = () => server.close(() => process.exit(0));
 process.on('SIGINT', shutdown);
 process.on('SIGTERM', shutdown);
