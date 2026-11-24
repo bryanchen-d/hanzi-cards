@@ -61,10 +61,6 @@ button { font: inherit; color: inherit; }
 .btn-block { width: 100%; }
 .btn-icon { padding: 9px 12px; display: inline-flex; align-items: center; }
 .btn-icon svg { width: 22px; height: 22px; }
-.link-btn {
-  background: none; border: 0; color: var(--blue); font-weight: 700; cursor: pointer; padding: 6px; font-size: 15px;
-}
-.link-btn:hover { text-decoration: underline; }
 .icon-btn { background: none; border: 0; cursor: pointer; padding: 6px; color: #afafaf; display: inline-flex; }
 .icon-btn svg { width: 26px; height: 26px; }
 .icon-btn:hover { color: var(--ink); }
@@ -99,14 +95,16 @@ button { font: inherit; color: inherit; }
 .tab.on { background: #fff; color: var(--ink); box-shadow: 0 1px 3px rgb(0 0 0 / 0.12); }
 .auth-form { display: grid; gap: 14px; text-align: left; }
 .auth-form label { display: grid; gap: 6px; font-weight: 700; font-size: 14px; }
-.auth-form input, .typed input {
+.auth-form input {
   font: inherit; font-size: 16px; padding: 12px 14px; border-radius: 12px; border: 2px solid var(--line); background: var(--soft);
 }
-.auth-form input:focus, .typed input:focus { outline: none; border-color: var(--blue); background: #fff; }
+.auth-form input:focus { outline: none; border-color: var(--blue); background: #fff; }
 .auth-form .hint { margin: -4px 0 0; font-size: 12px; color: var(--muted); }
 .error { color: var(--red-dark); font-weight: 700; font-size: 14px; min-height: 1em; }
 .error:empty { display: none; }
 .device-note { margin: 18px 0 0; font-size: 13px; color: var(--muted); text-align: center; }
+.credits { margin-top: 4px; font-size: 12px; }
+.credits a { color: inherit; }
 
 /* ---------- home ---------- */
 .topbar {
@@ -149,6 +147,8 @@ button { font: inherit; color: inherit; }
 .legend span { display: flex; align-items: center; gap: 6px; }
 .legend i { width: 14px; height: 14px; border-radius: 4px; display: inline-block; }
 .char-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(46px, 1fr)); gap: 8px; }
+.up-next-title { font-size: 15px; margin: 20px 0 10px; }
+.up-next-title .muted { font-weight: 600; }
 .char {
   aspect-ratio: 1; display: grid; place-items: center; font-size: 24px; border-radius: 12px; border: 2px solid transparent; cursor: default;
 }
@@ -197,6 +197,7 @@ body[data-view='practice'] #app { height: 100%; }
 .hanzi { font-size: 150px; line-height: 1.1; font-weight: 500; }
 .pinyin { font-size: 30px; font-weight: 800; color: var(--blue); }
 .meaning { font-size: 18px; color: var(--muted); font-weight: 700; text-align: center; }
+.readings { font-size: 15px; color: var(--blue); font-weight: 700; opacity: 0.75; }
 .listen-btn {
   position: absolute; top: 14px; right: 14px; width: 46px; height: 46px; border-radius: 14px; border: 2px solid var(--line);
   border-bottom-width: 4px; background: #fff; color: var(--blue); cursor: pointer; display: grid; place-items: center;
@@ -234,8 +235,6 @@ body[data-view='practice'] #app { height: 100%; }
   100% { box-shadow: 0 6px 0 var(--red-dark), 0 0 0 0 rgb(255 75 75 / 0); }
 }
 .mic-label { font-weight: 800; color: var(--muted); min-height: 1.2em; }
-.typed { display: flex; gap: 8px; }
-.typed input { width: 250px; }
 .practice-footer {
   position: fixed; bottom: 0; left: 0; right: 0; border-top: 2px solid var(--line); padding: 18px 24px; display: flex;
   justify-content: flex-start; background: #fff;
@@ -295,7 +294,6 @@ body[data-view='practice'] #app { height: 100%; }
   .card { min-height: 250px; }
   .sessions li { grid-template-columns: 1fr 1fr; }
   .sessions .bar { grid-column: 1 / -1; }
-  .typed input { width: 180px; }
   .sheet-actions { width: 100%; }
   .sheet-actions .btn-primary, .sheet-actions .btn-danger { flex: 1; }
 }

@@ -5,10 +5,13 @@ const Recognition = window.SpeechRecognition || window.webkitSpeechRecognition;
 export const recognitionSupported = Boolean(Recognition);
 
 const MESSAGES = {
-  unsupported: "This browser doesn't support speech recognition. Try Chrome, Edge or Safari — or type the pinyin below.",
-  'not-allowed': 'Microphone access is blocked. Allow the microphone for this site (address bar → site settings), then try again.',
-  'service-not-allowed': "Speech recognition isn't available here. In Safari, enable Siri/Dictation in System Settings, or type the pinyin below.",
-  'audio-capture': 'No microphone was found. Check that one is connected and selected.',
+  unsupported:
+    "This browser can't recognize speech, and Hanzi Cards is voice-only. Open this page in Chrome or Edge (desktop or Android) or Safari (Mac, iPhone or iPad).",
+  'not-allowed':
+    'Microphone access is blocked. Click the lock or site-settings icon in the address bar, set Microphone to Allow, then tap the mic again. (On iPhone/iPad: Settings → Safari → Microphone.)',
+  'service-not-allowed':
+    "Speech recognition is turned off. In Safari, enable Siri or Dictation (System Settings → Keyboard → Dictation), then tap the mic again.",
+  'audio-capture': 'No microphone was found. Check that one is connected and selected in your system sound settings.',
   network: 'Speech recognition needs an internet connection (the browser sends audio to its speech service).',
   'no-speech': "Didn't hear anything — tap the mic and say the character.",
   'language-not-supported': "This browser can't recognize Mandarin (zh-CN). Try Chrome or Edge.",
@@ -19,7 +22,7 @@ export function speechErrorMessage(code) {
   return MESSAGES[code] ?? `Speech recognition error (${code}). Please try again.`;
 }
 
-/** Errors that mean speaking won't work at all, so offer typing instead. */
+/** Errors that mean speaking can't work until the learner changes a setting or browser. */
 export function isFatalSpeechError(code) {
   return ['unsupported', 'not-allowed', 'service-not-allowed', 'audio-capture', 'language-not-supported'].includes(code);
 }

@@ -1,6 +1,7 @@
 import assert from 'node:assert/strict';
 import { describe, it } from 'node:test';
 import { checkPronunciation } from '../public/js/lib/checker.js';
+import { CHARACTERS } from '../public/js/lib/characters.js';
 import { parseSyllable } from '../public/js/lib/pinyin.js';
 
 const ni = { hanzi: '你', pinyin: 'nǐ' };
@@ -62,14 +63,21 @@ describe('checkPronunciation', () => {
     assert.equal(checkPronunciation({ hanzi: '十', pinyin: 'shí' }, ['10']).correct, true);
   });
 
-  it('checks typed pinyin', () => {
-    assert.equal(checkPronunciation(ni, ['ni3']).correct, true);
-    assert.equal(checkPronunciation(ni, ['nǐ']).matchType, 'pinyin');
-    assert.equal(checkPronunciation(ni, ['ni2']).correct, false);
-    assert.equal(checkPronunciation(ni, ['ni']).reason, 'tone');
-    assert.equal(checkPronunciation(ni, ['ni'], { ignoreTones: true }).correct, true);
-    assert.equal(checkPronunciation({ hanzi: '女', pinyin: 'nǚ' }, ['nv3']).correct, true);
-    assert.equal(checkPronunciation({ hanzi: '的', pinyin: 'de' }, ['de']).correct, true);
+  it('accepts any standard reading of a polyphonic character', () => {
+    const xing = { hanzi: '行', pinyin: 'xíng', readings: ['xíng', 'háng', 'héng'] };
+    assert.equal(checkPronunciation(xing, ['航']).correct, true, 'háng via homophone 航');
+    assert.equal(checkPronunciation(xing, ['型']).correct, true, 'xíng via homophone 型');
+    assert.equal(checkPronunciation({ hanzi: '行', pinyin: 'xíng' }, ['航']).correct, false, 'only listed readings count');
+
+    const de = CHARACTERS.find((c) => c.hanzi === '的');
+    assert.deepEqual(de.readings, ['de', 'dī', 'dí', 'dì']);
+    assert.equal(checkPronunciation(de, ['敌']).correct, true, 'dí reading from the deck');
+  });
+
+  it('ignores romanised transcripts (answers are spoken, not typed)', () => {
+    assert.equal(checkPronunciation(ni, ['ni3']).correct, false);
+    assert.equal(checkPronunciation(ni, ['Ni']).correct, false);
+    assert.equal(checkPronunciation(ni, ['nǐ'], { ignoreTones: true }).correct, false);
   });
 
   it('treats empty input as incorrect', () => {

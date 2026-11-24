@@ -1,6 +1,6 @@
 # Hanzi Cards
 
-A Duolingo-style web app for learning Chinese characters by pronouncing them out loud. It runs entirely in your browser.
+A Duolingo-style web app for learning the **3,000 most common Chinese characters** by pronouncing them out loud. Answers are spoken, never typed. It runs entirely in your browser.
 
 **▶ Live: https://bryanchen-d.github.io/hanzi-cards/**
 
@@ -10,11 +10,12 @@ A Duolingo-style web app for learning Chinese characters by pronouncing them out
   - ✗ **Wrong**: if nothing you say matches within the time limit (**10 seconds** by default, adjustable to 5–20 s on the dashboard), the turn ends with a cross and a "wrong" sound, and the correct pronunciation is played.
   - After each answer the card shows the pinyin and meaning, and 🔊 replays the sound.
 - **Spaced repetition**: every answer is recorded per character. The next card depends on your history. Missed and weak characters come back sooner, mastered ones less often, and new characters are mixed in gradually.
-- **Dashboard**: characters seen and mastered, accuracy, reviews due, a colour-coded grid of all 160 starter characters (common HSK 1–2), and recent sessions.
+- **Deck**: 3,000 characters (see [Character data](#character-data)). A curated beginner set of 160 (HSK 1–2: numbers, pronouns, everyday words) comes first, then the rest from most to least frequent.
+- **Dashboard**: characters seen and mastered, accuracy, reviews due, a colour-coded grid of the characters you've practised, the next ones coming up, and recent sessions.
 
 ## Use it
 
-Open **https://bryanchen-d.github.io/hanzi-cards/** in **Chrome, Edge or Safari** (desktop, Android or iOS). Create an account and press **Start practice**. The first time you tap the mic, the browser asks for microphone permission. Firefox has no speech recognition; there you can type the pinyin instead.
+Open **https://bryanchen-d.github.io/hanzi-cards/** in **Chrome, Edge or Safari** (desktop, Android or iOS). Create an account and press **Start practice**. The first time you tap the mic, the browser asks for microphone permission. Firefox has no speech recognition, so the app explains which browser to use instead.
 
 ## Run it locally
 
@@ -36,9 +37,9 @@ npm test
 ```
 
 The tests cover:
-- pinyin parsing and pronunciation checking (`test/checker.test.js`)
+- pinyin parsing and pronunciation checking, including polyphones (`test/checker.test.js`)
 - spaced-repetition scheduling (`test/scheduler.test.js`)
-- the in-browser backend (`test/backend.test.js`): password hashing, register/login/logout, per-user isolation, persistence across page loads, a full practice session, live checks and timeouts
+- the deck and the in-browser backend (`test/backend.test.js`): 3,000 unique characters with readings and meanings, password hashing, register/login/logout, per-user isolation, persistence across page loads, carry-over of earlier progress, a full practice session, live checks and timeouts
 
 ## Deployment
 
@@ -55,9 +56,29 @@ The browser's speech recogniser (`lang = zh-CN`, continuous with interim results
 [`public/js/lib/checker.js`](public/js/lib/checker.js) accepts an answer if any alternative:
 
 1. contains the target character, or
-2. contains a **homophone** with the same pinyin, using [`pinyin-pro`](https://github.com/zh-lx/pinyin-pro). For example, saying "tā" for 他 is accepted even if the recogniser writes 她.
+2. contains a **homophone** of any of the character's standard readings, using [`pinyin-pro`](https://github.com/zh-lx/pinyin-pro) to read the transcript. For example, saying "tā" for 他 is accepted even if the recogniser writes 她. For a polyphone like 行 (xíng / háng), either reading counts.
 
-Tones must match by default. When only the tone differs, the feedback says so. Turn on **Ignore tones** on the dashboard for a more forgiving check. The checker also maps digits the recogniser returns ("8" → 八) and understands typed pinyin such as `ni3`, `nǐ` or `lv4`.
+Tones must match by default. When only the tone differs, the feedback says so. Turn on **Ignore tones** on the dashboard for a more forgiving check. The checker also maps digits the recogniser returns ("8" → 八). Latin-letter transcripts are ignored, because answers are spoken.
+
+After you answer, the card shows the main reading, any other standard readings ("also …") and a short English gloss.
+
+## Character data
+
+The deck lives in [`public/js/lib/deck-data.js`](public/js/lib/deck-data.js), a compact generated module (113 KB, about 58 KB gzipped). [`scripts/build_deck.py`](scripts/build_deck.py) builds it like this:
+
+1. **Character set**: level 1 of the 2013 *Table of General Standard Chinese Characters* (通用规范汉字表), which lists the 3,500 most common characters. It comes from the Unicode Han Database (Unihan) field `kTGH`.
+2. **Order**: the curated beginner deck in [`scripts/data/starter.tsv`](scripts/data/starter.tsv) comes first. The rest follow by frequency, cut off at 3,000 characters in total. A character's frequency is the summed frequency of the Chinese words that contain it, from [wordfreq](https://github.com/rspeer/wordfreq). wordfreq includes SUBTLEX-CH, Google Books Ngrams, OpenSubtitles and Wikipedia.
+3. **Readings**: Unihan `kTGHZ2013`, the standard readings from 通用规范汉字字典. `kMandarin`, the most customary reading, is shown as the main one. Every standard reading is accepted when you speak.
+4. **Meanings**: Unihan `kDefinition`, trimmed to the first senses. Radical numbers and bare "surname" senses are dropped. The 160 starter characters keep hand-written meanings.
+
+To rebuild it:
+
+```bash
+python3 -m venv .venv && .venv/bin/pip install wordfreq
+.venv/bin/python scripts/build_deck.py      # downloads Unihan.zip into .cache/ on first run
+```
+
+**License**: the generated deck data is licensed [CC BY-SA 4.0](https://creativecommons.org/licenses/by-sa/4.0/). It credits wordfreq (Robyn Speer, CC BY-SA 4.0) and SUBTLEX-CH (Cai & Brysbaert, 2010), and it includes Unihan data under the Unicode License v3. The full notices are in [`DATA-LICENSE.md`](DATA-LICENSE.md) and at the top of `deck-data.js`, and the app credits the sources on the dashboard. Progress is keyed by character, so earlier progress carries over to the larger deck.
 
 ### Scheduling
 
@@ -99,9 +120,13 @@ public/                 the static site (deployed as-is)
   js/lib/checker.js     pronunciation / answer checking
   js/lib/pinyin.js      pinyin syllable parsing (tone marks, tone numbers, ü)
   js/lib/scheduler.js   spaced-repetition logic
-  js/lib/characters.js  starter deck (160 characters, pinyin, meaning)
+  js/lib/characters.js  parses the deck
+  js/lib/deck-data.js   generated 3,000-character deck (CC BY-SA 4.0)
   vendor/               generated by npm install (git-ignored)
 scripts/vendor.mjs      copies pinyin-pro's ES module build into public/vendor/
+scripts/build_deck.py   regenerates deck-data.js from Unihan + wordfreq
+scripts/data/starter.tsv  curated beginner deck (shown first)
+DATA-LICENSE.md         licenses and credits for the character data
 server/index.js         local static preview server
 test/                   node:test suites
 ```
@@ -109,10 +134,12 @@ test/                   node:test suites
 ## Limitations
 
 - **Device-only progress**: see [Where your data lives](#where-your-data-lives). There's no cloud sync, and no export yet.
-- **Browser support**: speech recognition works in Chrome, Edge and Safari, but not in Firefox. Firefox users get the type-the-pinyin fallback.
+- **Voice only**: there is no typing. Speech recognition works in Chrome, Edge and Safari, but not in Firefox, where **Start practice** is disabled and a message says which browsers work. If the microphone is blocked, the app shows how to allow it.
 - **Online recognition**: Chrome and Edge send the audio to their cloud speech service, so speaking practice needs an internet connection. Safari may need Siri/Dictation enabled.
 - **Secure context**: the microphone and Web Crypto work only on `https://` (such as GitHub Pages) or `http://localhost`.
 - **Tones**: the check relies on what the recogniser *thinks* you said. It works well for clear speech, but it is not a phonetic tone analyser. Single syllables are sometimes misheard, and the recogniser's language model can "fix" a wrong tone into the right character. Use **Ignore tones** if strict checking gets frustrating.
 - **Leniency while listening**: any matching syllable heard during the time limit counts. Saying many different syllables in a row can therefore hit a homophone by chance.
-- **Multiple readings**: characters with several readings are taught with their most common one (for example 的 = de). Saying the character itself is always accepted.
+- **Multiple readings**: any standard reading is accepted, so the check can't tell whether you used the right reading for a particular word.
+- **Meanings**: the English glosses for characters beyond the starter deck are brief dictionary definitions from Unihan. A few are archaic or unhelpful (for example 范 "bee-like insect").
+- **Rarer characters**: recognisers do best with common syllables. For rarer characters they often write a more common homophone, which still counts.
 - **Voices**: playback quality depends on the Chinese voices your OS or browser provides. If none is installed, the dashboard shows a warning.

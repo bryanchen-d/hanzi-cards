@@ -12,7 +12,7 @@ const MAX_ATTEMPTS = 5000;
 const MAX_SESSIONS = 200;
 const SESSION_SIZES = { min: 3, max: 50, default: 10 };
 
-export const DECK = CHARACTERS.map(([hanzi, pinyin, meaning], i) => ({ id: hanzi, hanzi, pinyin, meaning, ord: i + 1 }));
+export const DECK = CHARACTERS.map((c, i) => ({ id: c.hanzi, ...c, ord: i + 1 }));
 const charById = new Map(DECK.map((c) => [c.id, c]));
 
 export class ApiError extends Error {
@@ -85,6 +85,7 @@ function cardView(character, progress) {
     id: character.id,
     hanzi: character.hanzi,
     pinyin: character.pinyin,
+    readings: character.readings,
     meaning: character.meaning,
     isNew: !progress || progress.attempts === 0,
     box: progress?.box ?? 0,
@@ -324,7 +325,10 @@ export function createBackend({ storage = createMemoryStorage(), now = () => Dat
       save(user.id, data);
 
       return {
-        result: { ...result, expected: { hanzi: character.hanzi, pinyin: character.pinyin, meaning: character.meaning } },
+        result: {
+          ...result,
+          expected: { hanzi: character.hanzi, pinyin: character.pinyin, readings: character.readings, meaning: character.meaning },
+        },
         progress: progressView(progress),
         session: practiceView(practice),
       };

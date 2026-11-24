@@ -21,22 +21,8 @@ function readingsOf(ch) {
     .filter(Boolean);
 }
 
-// Typed (or romanised) answers such as "ni3", "nǐ" or "lv4".
-function evaluatePinyin(target, raw, ignoreTones) {
-  let nearTone = false;
-  for (const token of raw.normalize('NFKC').trim().split(/[\s,，]+/)) {
-    const syllable = parseSyllable(token);
-    if (syllablesMatch(target.syllable, syllable, { ignoreTones })) {
-      return { correct: true, matchType: 'pinyin' };
-    }
-    if (syllable && syllable.base === target.syllable.base) nearTone = true;
-  }
-  return { correct: false, nearTone };
-}
-
+// Only Chinese characters in the transcript count; recognisers sometimes return Latin text for unclear speech.
 function evaluate(target, raw, ignoreTones) {
-  if (!HAN.test(raw) && /\p{L}/u.test(raw)) return evaluatePinyin(target, raw, ignoreTones);
-
   const text = clean(raw);
   if (!text) return { correct: false, nearTone: false };
   if (text.includes(target.hanzi)) return { correct: true, matchType: 'exact' };
@@ -44,10 +30,10 @@ function evaluate(target, raw, ignoreTones) {
   let nearTone = false;
   for (const ch of [...text].filter((c) => HAN.test(c))) {
     for (const reading of readingsOf(ch)) {
-      if (syllablesMatch(target.syllable, reading, { ignoreTones })) {
-        return { correct: true, matchType: 'homophone' };
+      for (const syllable of target.syllables) {
+        if (syllablesMatch(syllable, reading, { ignoreTones })) return { correct: true, matchType: 'homophone' };
+        if (reading.base === syllable.base) nearTone = true;
       }
-      if (reading.base === target.syllable.base) nearTone = true;
     }
   }
   return { correct: false, nearTone };
@@ -58,11 +44,12 @@ export function toPinyin(text) {
 }
 
 /**
- * Decide whether what the learner said (one or more recognition alternatives,
- * or typed pinyin) is an acceptable pronunciation of `character`.
+ * Decide whether what the learner said (one or more speech-recognition
+ * alternatives) is an acceptable pronunciation of `character`.
  *
- * Accepted: the transcript contains the character itself, a homophone with the
- * same pinyin (tone must match unless `ignoreTones`), or matching typed pinyin.
+ * Accepted: a transcript contains the character itself, or a homophone of any
+ * of its standard readings (`character.readings`, falling back to
+ * `character.pinyin`). Tones must match unless `ignoreTones`.
  */
 export function checkPronunciation(character, candidates, { ignoreTones = false } = {}) {
   const list = (Array.isArray(candidates) ? candidates : [candidates])
@@ -71,9 +58,10 @@ export function checkPronunciation(character, candidates, { ignoreTones = false 
     .map((c) => c.slice(0, MAX_CANDIDATE_LENGTH).trim())
     .filter(Boolean);
 
+  const readings = character.readings?.length ? character.readings : [character.pinyin];
   const target = {
     hanzi: character.hanzi,
-    syllable: parseSyllable(character.pinyin, { bareIsNeutral: true }),
+    syllables: readings.map((r) => parseSyllable(r, { bareIsNeutral: true })).filter(Boolean),
   };
   const heard = list[0] ?? '';
   const base = { heard, heardPinyin: heard ? toPinyin(heard) : '' };

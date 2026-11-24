@@ -179,7 +179,7 @@ function renderHome() {
           <div class="chips" role="group" aria-label="Session length">
             ${SIZES.map((n) => `<button class="chip ${state.sessionSize === n ? 'on' : ''}" data-action="size" data-size="${n}">${n} cards</button>`).join('')}
           </div>
-          <button class="btn btn-primary btn-big" data-action="start">Start practice</button>
+          <button class="btn btn-primary btn-big" data-action="start" ${recognitionSupported ? '' : 'disabled'}>Start practice</button>
           <label class="toggle">
             <input type="checkbox" data-action="tones" ${state.ignoreTones ? 'checked' : ''}>
             <span>Ignore tones (more forgiving)</span>
@@ -196,7 +196,7 @@ function renderHome() {
         </div>
       </section>
 
-      ${recognitionSupported ? '' : `<div class="notice warn">${esc(speechErrorMessage('unsupported'))}</div>`}
+      ${recognitionSupported ? '' : `<div class="notice warn" data-testid="unsupported">${esc(speechErrorMessage('unsupported'))}</div>`}
       ${voiceWarning ? '<div class="notice warn">No Chinese text-to-speech voice was found, so correct pronunciations may not play. Install a Chinese (zh-CN) voice in your system settings.</div>' : ''}
 
       <section class="tiles">
@@ -206,25 +206,7 @@ function renderHome() {
         <div class="tile"><b>${t ? t.due : '—'}</b><span>Due for review</span></div>
       </section>
 
-      <section class="panel">
-        <div class="panel-head">
-          <h2>Your characters</h2>
-          <div class="legend">
-            <span><i class="lvl-new"></i>New</span><span><i class="lvl-learning"></i>Learning</span>
-            <span><i class="lvl-review"></i>Reviewing</span><span><i class="lvl-mastered"></i>Mastered</span>
-          </div>
-        </div>
-        <div class="char-grid">
-          ${(s?.characters ?? [])
-            .map((c) => {
-              const tip = c.attempts
-                ? `${c.pinyin} — ${c.meaning} · ${c.correct}/${c.attempts} correct · ${levelLabel(c.box)}`
-                : `${c.pinyin} — ${c.meaning} · not practiced yet`;
-              return `<div class="char ${levelClass(c)}" title="${esc(tip)}" lang="zh-CN">${esc(c.hanzi)}</div>`;
-            })
-            .join('')}
-        </div>
-      </section>
+      ${charactersPanel(s)}
 
       <section class="panel">
         <h2>Recent sessions</h2>
@@ -241,7 +223,48 @@ function renderHome() {
         }
       </section>
       <p class="device-note">${deviceNote()} Clearing this site's data in your browser deletes it.</p>
+      <p class="device-note credits">
+        Character data: <a href="https://www.unicode.org/charts/unihan.html" target="_blank" rel="noopener">Unicode Unihan</a>
+        and <a href="https://github.com/rspeer/wordfreq" target="_blank" rel="noopener">wordfreq</a> (incl. SUBTLEX-CH),
+        <a href="https://github.com/bryanchen-d/hanzi-cards/blob/main/DATA-LICENSE.md" target="_blank" rel="noopener">CC BY-SA 4.0</a>.
+      </p>
     </main>`;
+}
+
+const UP_NEXT = 12;
+
+// Practiced characters plus a peek at the next new ones; the full 3000-character deck would be too many tiles.
+function charactersPanel(s) {
+  const all = s?.characters ?? [];
+  const practiced = all.filter((c) => c.attempts > 0);
+  const upNext = all.filter((c) => !c.attempts).slice(0, UP_NEXT);
+  const tile = (c) => {
+    const tip = `${c.pinyin} — ${c.meaning} · ${c.correct}/${c.attempts} correct · ${levelLabel(c.box)}`;
+    return `<div class="char ${levelClass(c)}" title="${esc(tip)}" lang="zh-CN">${esc(c.hanzi)}</div>`;
+  };
+  return `
+      <section class="panel">
+        <div class="panel-head">
+          <h2>Your characters</h2>
+          <div class="legend">
+            <span><i class="lvl-learning"></i>Learning</span>
+            <span><i class="lvl-review"></i>Reviewing</span><span><i class="lvl-mastered"></i>Mastered</span>
+          </div>
+        </div>
+        ${
+          practiced.length
+            ? `<div class="char-grid practiced">${practiced.map(tile).join('')}</div>`
+            : '<p class="muted">Characters you practice will appear here.</p>'
+        }
+        ${
+          upNext.length
+            ? `<h3 class="up-next-title">Up next <span class="muted">· ${all.length - practiced.length} new characters to go</span></h3>
+               <div class="char-grid up-next">${upNext
+                 .map((c) => `<div class="char lvl-new" lang="zh-CN">${esc(c.hanzi)}</div>`)
+                 .join('')}</div>`
+            : ''
+        }
+      </section>`;
 }
 
 // ---------------------------------------------------------------------------
@@ -261,7 +284,7 @@ async function startPractice() {
       phase: 'loading',
       result: null,
       message: '',
-      typing: !recognitionSupported,
+      blocked: false,
       listener: null,
     };
     setView('practice');
@@ -360,7 +383,7 @@ async function startListeningTurn() {
     turn.concluded = true;
     p.phase = 'ready';
     p.message = err.message;
-    if (isFatalSpeechError(err.code)) p.typing = true;
+    p.blocked = isFatalSpeechError(err.code);
     renderPractice();
   }
 }
@@ -399,37 +422,30 @@ async function submitAnswer(payload) {
 
 function micBlock(p) {
   if (p.phase === 'feedback') return '';
+  if (!recognitionSupported) {
+    return `<div class="answer-area"><div class="notice warn" role="alert">${esc(speechErrorMessage('unsupported'))}</div></div>`;
+  }
   const listening = p.phase === 'listening';
   const busy = p.phase !== 'ready';
   const label = { listening: 'Listening… say the character', checking: 'Checking…', loading: '' }[p.phase] ?? 'Tap to speak';
-  const canSpeak = recognitionSupported;
   return `
     <div class="answer-area">
+      <button class="mic ${listening ? 'listening' : ''}" data-action="speak" ${busy ? 'disabled' : ''}
+        aria-label="${listening ? 'Listening' : 'Speak the character'}">${ICONS.mic}</button>
+      <div class="mic-label" aria-live="polite">${p.blocked && !listening ? 'Tap to try again' : label}</div>
       ${
-        canSpeak
-          ? `<button class="mic ${listening ? 'listening' : ''}" data-action="speak" ${busy ? 'disabled' : ''}
-               aria-label="${listening ? 'Listening' : 'Speak the character'}">${ICONS.mic}</button>
-             <div class="mic-label" aria-live="polite">${label}</div>
-             ${
-               listening
-                 ? `<div class="countdown" aria-hidden="true"><div class="countdown-fill"></div></div>
-                    <div class="live-heard" lang="zh-CN" aria-live="polite"></div>`
-                 : ''
-             }`
+        listening
+          ? `<div class="countdown" aria-hidden="true"><div class="countdown-fill"></div></div>
+             <div class="live-heard" lang="zh-CN" aria-live="polite"></div>`
           : ''
       }
-      ${p.message ? `<div class="notice ${canSpeak && !p.typing ? '' : 'warn'}" role="alert">${esc(p.message)}</div>` : ''}
-      ${
-        p.typing
-          ? `<form class="typed" data-form="typed">
-               <input name="typed" placeholder="Pinyin, e.g. ni3 or nǐ" aria-label="Type the pinyin" autocomplete="off" autocapitalize="off" spellcheck="false" ${busy ? 'disabled' : ''}>
-               <button class="btn btn-secondary" type="submit" ${busy ? 'disabled' : ''}>Check</button>
-             </form>`
-          : canSpeak && !listening
-            ? '<button class="link-btn" data-action="show-typing">Can’t speak right now? Type the pinyin</button>'
-            : ''
-      }
+      ${p.message ? `<div class="notice ${p.blocked ? 'warn' : ''}" role="alert">${esc(p.message)}</div>` : ''}
     </div>`;
+}
+
+function otherReadings(c) {
+  const others = (c.readings ?? []).filter((r) => r !== c.pinyin);
+  return others.length ? `<div class="readings">also ${others.map(esc).join(' · ')}</div>` : '';
 }
 
 function feedbackSheet(p) {
@@ -484,7 +500,7 @@ function renderPractice() {
         <div class="hanzi" lang="zh-CN">${esc(c.hanzi)}</div>
         ${
           r
-            ? `<div class="pinyin">${esc(c.pinyin)}</div><div class="meaning">${esc(c.meaning)}</div>
+            ? `<div class="pinyin">${esc(c.pinyin)}</div>${otherReadings(c)}<div class="meaning">${esc(c.meaning)}</div>
                <button class="listen-btn" data-action="listen" aria-label="Play pronunciation">${ICONS.speaker}</button>
                <div class="mark ${r.correct ? 'ok' : 'bad'}" data-testid="mark">${r.correct ? ICONS.check : ICONS.cross}</div>`
             : ''
@@ -511,7 +527,6 @@ function renderPractice() {
     </div>`;
 
   if (r) app.querySelector('[data-action=continue]')?.focus();
-  else if (p.typing && p.phase === 'ready') app.querySelector('input[name=typed]')?.focus();
 }
 
 function exitPractice() {
@@ -581,10 +596,6 @@ const actions = {
   home: () => showHome(),
   exit: () => exitPractice(),
   speak: () => startListeningTurn(),
-  'show-typing': () => {
-    state.practice.typing = true;
-    renderPractice();
-  },
   listen: () => {
     if (state.practice?.phase === 'feedback') speakChinese(state.practice.card.hanzi);
   },
@@ -616,12 +627,6 @@ app.addEventListener('submit', (event) => {
   event.preventDefault();
   const form = event.target;
   if (form.dataset.form === 'auth') submitAuth(form);
-  if (form.dataset.form === 'typed') {
-    const value = form.typed.value.trim();
-    if (!value || state.practice?.phase !== 'ready') return;
-    unlockAudio();
-    submitAnswer({ transcripts: [value] });
-  }
 });
 
 document.addEventListener('keydown', (event) => {

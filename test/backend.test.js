@@ -1,6 +1,8 @@
 import assert from 'node:assert/strict';
+import { readFileSync } from 'node:fs';
 import { describe, it } from 'node:test';
-import { createBackend, createMemoryStorage, hashPassword, verifyPassword } from '../public/js/lib/backend.js';
+import { DECK, createBackend, createMemoryStorage, hashPassword, verifyPassword } from '../public/js/lib/backend.js';
+import { parseSyllable } from '../public/js/lib/pinyin.js';
 
 const backend = (storage = createMemoryStorage()) => createBackend({ storage, rand: () => 0.99 });
 
@@ -10,6 +12,33 @@ async function rejects(promise, status) {
     return true;
   });
 }
+
+describe('deck', () => {
+  it('has 3000 unique characters, the curated starter deck first, each with readings and a meaning', () => {
+    assert.equal(DECK.length, 3000);
+    assert.equal(new Set(DECK.map((c) => c.id)).size, 3000);
+    const starter = readFileSync(new URL('../scripts/data/starter.tsv', import.meta.url), 'utf8')
+      .split('\n')
+      .filter((line) => line && !line.startsWith('#'))
+      .map((line) => line.split('\t')[0]);
+    assert.deepEqual(DECK.slice(0, starter.length).map((c) => c.hanzi), starter);
+    for (const c of DECK) {
+      assert.ok(c.meaning, `${c.hanzi} has a meaning`);
+      assert.equal(c.readings[0], c.pinyin);
+      for (const r of c.readings) assert.ok(parseSyllable(r, { bareIsNeutral: true }), `${c.hanzi}: ${r} parses`);
+    }
+  });
+
+  it('keeps progress saved by earlier versions (keyed by character)', async () => {
+    const storage = createMemoryStorage();
+    const api = backend(storage);
+    const { user } = await api.register('returning', 'secret123');
+    const old = { box: 3, attempts: 4, correct: 3, incorrect: 1, streak: 2, last_result: 1, last_seen: 1, next_due: Date.now() + 1e9 };
+    storage.setItem(`hanzi-cards:v1:data:${user.id}`, JSON.stringify({ progress: { 杯: old }, sessions: [], attempts: [], nextSessionId: 1 }));
+    const cup = (await api.stats()).characters.find((c) => c.hanzi === '杯');
+    assert.deepEqual([cup.attempts, cup.box], [4, 3]);
+  });
+});
 
 describe('password hashing', () => {
   it('verifies the right password only', async () => {
