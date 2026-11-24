@@ -3,7 +3,7 @@
 A Duolingo-style web app for learning Chinese characters by pronouncing them out loud.
 
 - **Accounts**: sign up / log in. Your progress is saved per user.
-- **Practice sessions**: one character card per turn. Tap the mic, say the character, and the app listens and checks your pronunciation.
+- **Practice sessions**: one character card per turn. Tap the mic, say the character, and the app listens and checks your pronunciation. The pinyin stays hidden until you answer. New characters show their meaning and a 🔊 button to hear them first.
   - ✓ **Correct**: a check mark and a "pass" sound.
   - ✗ **Wrong**: a cross, a "wrong" sound, then the correct pronunciation is played back.
 - **Spaced repetition**: every answer is recorded per character. The next card depends on your history. Missed and weak characters come back sooner, mastered ones less often, and new characters are mixed in gradually.

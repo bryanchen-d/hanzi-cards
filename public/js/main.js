@@ -396,7 +396,9 @@ function renderPractice() {
   const c = p.card;
   const r = p.phase === 'feedback' ? p.result : null;
   const pct = Math.round((p.answered / p.size) * 100);
-  const reveal = c && (c.isNew || r);
+  // Pinyin stays hidden until the learner has answered; new cards show the meaning and a listen button instead.
+  const showMeaning = c && (c.isNew || r || p.hint);
+  const canListen = c && (c.isNew || r);
 
   let body = '<div class="spinner" aria-label="Loading"></div>';
   if (c) {
@@ -407,14 +409,13 @@ function renderPractice() {
       </div>
       <div class="card ${r ? (r.correct ? 'correct' : 'wrong') : ''}">
         <div class="hanzi" lang="zh-CN">${esc(c.hanzi)}</div>
+        ${r ? `<div class="pinyin">${esc(c.pinyin)}</div>` : ''}
         ${
-          reveal
-            ? `<div class="pinyin">${esc(c.pinyin)}</div><div class="meaning">${esc(c.meaning)}</div>`
-            : p.hint
-              ? `<div class="meaning">${esc(c.meaning)}</div>`
-              : '<button class="link-btn" data-action="hint">Show meaning</button>'
+          showMeaning
+            ? `<div class="meaning">${esc(c.meaning)}</div>`
+            : '<button class="link-btn" data-action="hint">Show meaning</button>'
         }
-        ${reveal ? `<button class="listen-btn" data-action="listen" aria-label="Play pronunciation">${ICONS.speaker}</button>` : ''}
+        ${canListen ? `<button class="listen-btn" data-action="listen" aria-label="Play pronunciation">${ICONS.speaker}</button>` : ''}
         ${r ? `<div class="mark ${r.correct ? 'ok' : 'bad'}" data-testid="mark">${r.correct ? ICONS.check : ICONS.cross}</div>` : ''}
       </div>
       ${micBlock(p)}`;

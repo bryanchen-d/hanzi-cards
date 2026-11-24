@@ -202,13 +202,13 @@ body[data-view='practice'] #app { height: 100%; }
 }
 .listen-btn svg { width: 24px; height: 24px; }
 .mark {
-  position: absolute; top: -22px; left: 50%; transform: translateX(-50%); width: 64px; height: 64px; border-radius: 50%;
-  display: grid; place-items: center; color: #fff; border: 4px solid #fff; animation: pop 0.45s cubic-bezier(0.2, 1.6, 0.4, 1);
+  position: absolute; top: 14px; left: 14px; width: 52px; height: 52px; border-radius: 50%;
+  display: grid; place-items: center; color: #fff; animation: pop 0.45s cubic-bezier(0.2, 1.6, 0.4, 1);
 }
-.mark svg { width: 34px; height: 34px; }
+.mark svg { width: 30px; height: 30px; }
 .mark.ok { background: var(--green); }
 .mark.bad { background: var(--red); }
-@keyframes pop { from { transform: translateX(-50%) scale(0); } }
+@keyframes pop { from { transform: scale(0); } }
 .answer-area { display: grid; gap: 12px; justify-items: center; }
 .mic {
   width: 96px; height: 96px; border-radius: 50%; border: 0; cursor: pointer; color: #fff; background: var(--blue);
