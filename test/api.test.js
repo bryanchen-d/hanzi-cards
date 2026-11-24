@@ -135,4 +135,30 @@ describe('practice session API', () => {
     const seenChar = stats.characters.find((c) => c.id === second.card.id);
     assert.equal(seenChar.incorrect, 1);
   });
+
+  it('live-checks without recording, and records a timeout as wrong', async () => {
+    const call = client();
+    await call('POST', '/api/auth/register', { username: 'listener', password: 'secret123' });
+    const id = (await call('POST', '/api/sessions', { size: 3 })).body.session.id;
+    const card = (await call('GET', `/api/sessions/${id}/next`)).body.card;
+
+    const miss = await call('POST', `/api/sessions/${id}/check`, { charId: card.id, transcripts: ['猫'] });
+    assert.deepEqual(miss.body, { correct: false, matchType: null });
+    const hit = await call('POST', `/api/sessions/${id}/check`, { charId: card.id, transcripts: [`嗯${card.hanzi}`] });
+    assert.equal(hit.body.correct, true);
+    assert.equal((await call('GET', '/api/stats')).body.totals.attempts, 0, 'checks are not recorded');
+    assert.equal((await call('GET', `/api/sessions/${id}/next`)).body.card.id, card.id, 'card stays current');
+
+    const silent = await call('POST', `/api/sessions/${id}/answer`, { charId: card.id, timedOut: true, transcripts: [] });
+    assert.equal(silent.body.result.correct, false);
+    assert.equal(silent.body.result.matchType, 'timeout');
+    assert.equal(silent.body.session.answered, 1);
+
+    const second = (await call('GET', `/api/sessions/${id}/next`)).body.card;
+    const rambling = await call('POST', `/api/sessions/${id}/answer`, { charId: second.id, timedOut: true, transcripts: ['猫狗'] });
+    assert.equal(rambling.body.result.correct, false);
+    assert.equal(rambling.body.result.timedOut, true);
+    assert.equal(rambling.body.result.heard, '猫狗');
+    assert.equal((await call('GET', '/api/stats')).body.totals.attempts, 2);
+  });
 });

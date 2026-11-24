@@ -194,23 +194,54 @@ export function createApp({ db, now = () => Date.now(), rand = Math.random, secu
     });
   });
 
-  app.post('/api/sessions/:id/answer', requireAuth, (req, res) => {
+  // Shared validation for /check and /answer: the session must be open and charId must be its current card.
+  function loadCurrentCard(req, res) {
     const practice = loadPractice(req, res);
-    if (!practice) return;
-    const { charId, transcripts, ignoreTones, skipped } = req.body ?? {};
-    if (practice.answered >= practice.size) return res.status(409).json({ error: 'This session is already finished.' });
-    if (!practice.current_char_id || Number(charId) !== practice.current_char_id) {
-      return res.status(409).json({ error: 'That card is not the current card.' });
+    if (!practice) return null;
+    if (practice.answered >= practice.size) {
+      res.status(409).json({ error: 'This session is already finished.' });
+      return null;
     }
-    const candidates = Array.isArray(transcripts) ? transcripts.filter((t) => typeof t === 'string') : [];
-    if (!skipped && !candidates.some((t) => t.trim())) {
+    if (!practice.current_char_id || Number(req.body?.charId) !== practice.current_char_id) {
+      res.status(409).json({ error: 'That card is not the current card.' });
+      return null;
+    }
+    return { practice, character: store.character(practice.current_char_id) };
+  }
+
+  function candidatesFrom(body) {
+    return Array.isArray(body?.transcripts) ? body.transcripts.filter((t) => typeof t === 'string' && t.trim()) : [];
+  }
+
+  // Live check while the learner is still speaking: nothing is recorded.
+  app.post('/api/sessions/:id/check', requireAuth, (req, res) => {
+    const current = loadCurrentCard(req, res);
+    if (!current) return;
+    const result = checkPronunciation(current.character, candidatesFrom(req.body), {
+      ignoreTones: Boolean(req.body?.ignoreTones),
+    });
+    res.json({ correct: result.correct, matchType: result.matchType });
+  });
+
+  app.post('/api/sessions/:id/answer', requireAuth, (req, res) => {
+    const current = loadCurrentCard(req, res);
+    if (!current) return;
+    const { practice, character } = current;
+    const { ignoreTones, skipped, timedOut } = req.body ?? {};
+    const candidates = candidatesFrom(req.body);
+    if (!skipped && !timedOut && candidates.length === 0) {
       return res.status(400).json({ error: 'No answer was provided.' });
     }
 
-    const character = store.character(practice.current_char_id);
-    const result = skipped
-      ? { correct: false, matchType: 'skipped', heard: '', heardPinyin: '', reason: 'skipped' }
-      : checkPronunciation(character, candidates, { ignoreTones: Boolean(ignoreTones) });
+    let result;
+    if (skipped) {
+      result = { correct: false, matchType: 'skipped', heard: '', heardPinyin: '', reason: 'skipped' };
+    } else if (candidates.length === 0) {
+      result = { correct: false, matchType: 'timeout', heard: '', heardPinyin: '', reason: 'timeout' };
+    } else {
+      result = checkPronunciation(character, candidates, { ignoreTones: Boolean(ignoreTones) });
+      if (timedOut && !result.correct) result.timedOut = true;
+    }
     const t = now();
     const progress = applyResult(store.progressOne(req.user.id, character.id), result.correct, t);
     const updated = store.recordAnswer({

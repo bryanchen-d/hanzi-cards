@@ -27,5 +27,6 @@ export const api = {
   stats: () => request('GET', '/api/stats'),
   startSession: (size) => request('POST', '/api/sessions', { size }),
   next: (id) => request('GET', `/api/sessions/${id}/next`),
+  check: (id, payload) => request('POST', `/api/sessions/${id}/check`, payload),
   answer: (id, payload) => request('POST', `/api/sessions/${id}/answer`, payload),
 };

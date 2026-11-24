@@ -1,5 +1,5 @@
 import { api } from './api.js';
-import { isFatalSpeechError, listenOnce, recognitionSupported, speechErrorMessage } from './speech.js';
+import { isFatalSpeechError, recognitionSupported, speechErrorMessage, startListening } from './speech.js';
 import { hasChineseVoice, speakChinese, ttsSupported } from './tts.js';
 import { playComplete, playFail, playPass, unlockAudio } from './sounds.js';
 
@@ -7,6 +7,9 @@ const app = document.getElementById('app');
 const MASTERED_BOX = 5;
 const MAX_BOX = 7;
 const SIZES = [5, 10, 20];
+const LISTEN_SECONDS = [5, 10, 15, 20];
+const DEFAULT_LISTEN_SECONDS = 10;
+const storedListen = Number(localStorage.getItem('hz.listenSeconds'));
 
 const state = {
   view: 'loading',
@@ -14,6 +17,7 @@ const state = {
   stats: null,
   sessionSize: SIZES.includes(Number(localStorage.getItem('hz.size'))) ? Number(localStorage.getItem('hz.size')) : 10,
   ignoreTones: localStorage.getItem('hz.ignoreTones') === '1',
+  listenSeconds: storedListen > 0 && storedListen <= 60 ? storedListen : DEFAULT_LISTEN_SECONDS,
   practice: null,
   summary: null,
 };
@@ -173,6 +177,15 @@ function renderHome() {
             <input type="checkbox" data-action="tones" ${state.ignoreTones ? 'checked' : ''}>
             <span>Ignore tones (more forgiving)</span>
           </label>
+          <label class="toggle">
+            <span>Time to answer</span>
+            <select data-setting="listen-seconds" aria-label="Time to answer">
+              ${[...new Set([...LISTEN_SECONDS, state.listenSeconds])]
+                .sort((a, b) => a - b)
+                .map((n) => `<option value="${n}" ${n === state.listenSeconds ? 'selected' : ''}>${n} seconds</option>`)
+                .join('')}
+            </select>
+          </label>
         </div>
       </section>
 
@@ -240,7 +253,6 @@ async function startPractice() {
       phase: 'loading',
       result: null,
       message: '',
-      hint: false,
       typing: !recognitionSupported,
       listener: null,
     };
@@ -258,7 +270,6 @@ async function loadNextCard() {
   p.card = null;
   p.result = null;
   p.message = '';
-  p.hint = false;
   renderPractice();
   const data = await api.next(p.id);
   if (state.practice !== p) return;
@@ -272,31 +283,77 @@ async function loadNextCard() {
   renderPractice();
 }
 
-async function toggleListening() {
+async function startListeningTurn() {
   const p = state.practice;
-  if (p.phase === 'listening') {
-    p.listener?.stop();
-    return;
-  }
   if (p.phase !== 'ready') return;
   unlockAudio();
   window.speechSynthesis?.cancel();
+  const card = p.card;
+  // One "turn" of listening; `concluded` guards against a late live-check and the timeout both submitting.
+  const turn = { concluded: false, checking: false, pending: null };
+  p.turn = turn;
   p.phase = 'listening';
   p.message = '';
+  p.liveText = '';
+  p.listenStarted = false;
   renderPractice();
-  p.listener = listenOnce();
+
+  const conclude = (payload) => {
+    if (turn.concluded || state.practice !== p || p.turn !== turn) return;
+    turn.concluded = true;
+    p.listener?.stop();
+    submitAnswer(payload);
+  };
+
+  const liveCheck = async (candidates) => {
+    if (turn.checking) {
+      turn.pending = candidates;
+      return;
+    }
+    turn.checking = true;
+    try {
+      const res = await api.check(p.id, { charId: card.id, transcripts: candidates, ignoreTones: state.ignoreTones });
+      if (res.correct) conclude({ transcripts: candidates });
+    } catch {
+      // ignore transient errors; the deadline still concludes the turn
+    } finally {
+      turn.checking = false;
+      if (turn.pending && !turn.concluded) {
+        const next = turn.pending;
+        turn.pending = null;
+        liveCheck(next);
+      }
+    }
+  };
+
+  p.listener = startListening({
+    timeoutMs: state.listenSeconds * 1000,
+    onStart: () => {
+      p.listenStarted = true;
+      const bar = app.querySelector('.countdown-fill');
+      if (bar) {
+        bar.style.animationDuration = `${state.listenSeconds}s`;
+        bar.classList.add('running');
+      }
+    },
+    onResult: (candidates) => {
+      p.liveText = candidates[0] ?? '';
+      const live = app.querySelector('.live-heard');
+      if (live) live.textContent = p.liveText ? `Heard: ${p.liveText}` : '';
+      liveCheck(candidates);
+    },
+  });
+
   try {
-    const transcripts = await p.listener.promise;
-    if (state.practice !== p) return;
-    await submitAnswer({ transcripts });
+    const { reason, candidates } = await p.listener.done;
+    if (reason === 'timeout') conclude({ transcripts: candidates, timedOut: true });
   } catch (err) {
-    if (state.practice !== p) return;
+    if (state.practice !== p || turn.concluded) return;
+    turn.concluded = true;
     p.phase = 'ready';
-    if (err.code !== 'aborted') p.message = err.message;
+    p.message = err.message;
     if (isFatalSpeechError(err.code)) p.typing = true;
     renderPractice();
-  } finally {
-    p.listener = null;
   }
 }
 
@@ -334,16 +391,23 @@ async function submitAnswer(payload) {
 
 function micBlock(p) {
   if (p.phase === 'feedback') return '';
-  const busy = p.phase === 'loading' || p.phase === 'checking';
-  const label = { listening: 'Listening… tap to stop', checking: 'Checking…', loading: '' }[p.phase] ?? 'Tap to speak';
+  const listening = p.phase === 'listening';
+  const busy = p.phase !== 'ready';
+  const label = { listening: 'Listening… say the character', checking: 'Checking…', loading: '' }[p.phase] ?? 'Tap to speak';
   const canSpeak = recognitionSupported;
   return `
     <div class="answer-area">
       ${
         canSpeak
-          ? `<button class="mic ${p.phase === 'listening' ? 'listening' : ''}" data-action="speak" ${busy ? 'disabled' : ''}
-               aria-label="${p.phase === 'listening' ? 'Stop listening' : 'Speak the character'}">${ICONS.mic}</button>
-             <div class="mic-label" aria-live="polite">${label}</div>`
+          ? `<button class="mic ${listening ? 'listening' : ''}" data-action="speak" ${busy ? 'disabled' : ''}
+               aria-label="${listening ? 'Listening' : 'Speak the character'}">${ICONS.mic}</button>
+             <div class="mic-label" aria-live="polite">${label}</div>
+             ${
+               listening
+                 ? `<div class="countdown" aria-hidden="true"><div class="countdown-fill"></div></div>
+                    <div class="live-heard" lang="zh-CN" aria-live="polite"></div>`
+                 : ''
+             }`
           : ''
       }
       ${p.message ? `<div class="notice ${canSpeak && !p.typing ? '' : 'warn'}" role="alert">${esc(p.message)}</div>` : ''}
@@ -353,7 +417,7 @@ function micBlock(p) {
                <input name="typed" placeholder="Pinyin, e.g. ni3 or nǐ" aria-label="Type the pinyin" autocomplete="off" autocapitalize="off" spellcheck="false" ${busy ? 'disabled' : ''}>
                <button class="btn btn-secondary" type="submit" ${busy ? 'disabled' : ''}>Check</button>
              </form>`
-          : canSpeak
+          : canSpeak && !listening
             ? '<button class="link-btn" data-action="show-typing">Can’t speak right now? Type the pinyin</button>'
             : ''
       }
@@ -368,7 +432,10 @@ function feedbackSheet(p) {
         r.heardPinyin && r.heardPinyin !== r.heard ? ` <span class="muted">(${esc(r.heardPinyin)})</span>` : ''
       }</div>`
     : '';
-  const title = r.correct ? p.praise : r.matchType === 'skipped' ? 'Skipped — here’s the answer' : 'Not quite';
+  let title = 'Not quite';
+  if (r.correct) title = p.praise;
+  else if (r.matchType === 'skipped') title = 'Skipped — here’s the answer';
+  else if (r.matchType === 'timeout' || r.timedOut) title = 'Time’s up';
   return `
     <div class="sheet ${r.correct ? 'ok' : 'bad'}" role="status">
       <div class="sheet-inner">
@@ -396,27 +463,24 @@ function renderPractice() {
   const c = p.card;
   const r = p.phase === 'feedback' ? p.result : null;
   const pct = Math.round((p.answered / p.size) * 100);
-  // Pinyin stays hidden until the learner has answered; new cards show the meaning and a listen button instead.
-  const showMeaning = c && (c.isNew || r || p.hint);
-  const canListen = c && (c.isNew || r);
+  // Before answering the card shows only the character: no pinyin, meaning or audio hints.
 
   let body = '<div class="spinner" aria-label="Loading"></div>';
   if (c) {
     body = `
       <div class="prompt">
         ${c.isNew ? '<span class="badge new">New character</span>' : `<span class="badge">${levelLabel(c.box)} ${levelDots(c.box)}</span>`}
-        <h2>${c.isNew ? 'Listen, then say it out loud' : 'Say this character'}</h2>
+        <h2>Say this character</h2>
       </div>
       <div class="card ${r ? (r.correct ? 'correct' : 'wrong') : ''}">
         <div class="hanzi" lang="zh-CN">${esc(c.hanzi)}</div>
-        ${r ? `<div class="pinyin">${esc(c.pinyin)}</div>` : ''}
         ${
-          showMeaning
-            ? `<div class="meaning">${esc(c.meaning)}</div>`
-            : '<button class="link-btn" data-action="hint">Show meaning</button>'
+          r
+            ? `<div class="pinyin">${esc(c.pinyin)}</div><div class="meaning">${esc(c.meaning)}</div>
+               <button class="listen-btn" data-action="listen" aria-label="Play pronunciation">${ICONS.speaker}</button>
+               <div class="mark ${r.correct ? 'ok' : 'bad'}" data-testid="mark">${r.correct ? ICONS.check : ICONS.cross}</div>`
+            : ''
         }
-        ${canListen ? `<button class="listen-btn" data-action="listen" aria-label="Play pronunciation">${ICONS.speaker}</button>` : ''}
-        ${r ? `<div class="mark ${r.correct ? 'ok' : 'bad'}" data-testid="mark">${r.correct ? ICONS.check : ICONS.cross}</div>` : ''}
       </div>
       ${micBlock(p)}`;
   }
@@ -443,7 +507,8 @@ function renderPractice() {
 }
 
 function exitPractice() {
-  state.practice?.listener?.abort();
+  if (state.practice?.turn) state.practice.turn.concluded = true;
+  state.practice?.listener?.stop();
   window.speechSynthesis?.cancel();
   showHome();
 }
@@ -507,16 +572,14 @@ const actions = {
   start: () => startPractice(),
   home: () => showHome(),
   exit: () => exitPractice(),
-  speak: () => toggleListening(),
-  hint: () => {
-    state.practice.hint = true;
-    renderPractice();
-  },
+  speak: () => startListeningTurn(),
   'show-typing': () => {
     state.practice.typing = true;
     renderPractice();
   },
-  listen: () => speakChinese(state.practice.card.hanzi),
+  listen: () => {
+    if (state.practice?.phase === 'feedback') speakChinese(state.practice.card.hanzi);
+  },
   skip: () => {
     if (state.practice?.phase !== 'ready') return;
     unlockAudio();
@@ -532,6 +595,13 @@ app.addEventListener('click', (event) => {
   const el = event.target.closest('[data-action]');
   if (!el || el.disabled) return;
   actions[el.dataset.action]?.(el, event);
+});
+
+app.addEventListener('change', (event) => {
+  if (event.target.dataset.setting === 'listen-seconds') {
+    state.listenSeconds = Number(event.target.value) || DEFAULT_LISTEN_SECONDS;
+    localStorage.setItem('hz.listenSeconds', String(state.listenSeconds));
+  }
 });
 
 app.addEventListener('submit', (event) => {
@@ -550,9 +620,9 @@ document.addEventListener('keydown', (event) => {
   if (state.view !== 'practice' || event.target.matches('input, textarea')) return;
   const p = state.practice;
   if (event.code === 'Space' && event.target.closest('button')) return; // native button activation
-  if (event.code === 'Space' && (p.phase === 'ready' || p.phase === 'listening') && recognitionSupported) {
+  if (event.code === 'Space' && p.phase === 'ready' && recognitionSupported) {
     event.preventDefault();
-    toggleListening();
+    startListeningTurn();
   } else if (event.key === 'Enter' && p.phase === 'feedback') {
     event.preventDefault();
     actions.continue();

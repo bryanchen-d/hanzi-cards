@@ -3,9 +3,10 @@
 A Duolingo-style web app for learning Chinese characters by pronouncing them out loud.
 
 - **Accounts**: sign up / log in. Your progress is saved per user.
-- **Practice sessions**: one character card per turn. Tap the mic, say the character, and the app listens and checks your pronunciation. The pinyin stays hidden until you answer. New characters show their meaning and a 🔊 button to hear them first.
-  - ✓ **Correct**: a check mark and a "pass" sound.
-  - ✗ **Wrong**: a cross, a "wrong" sound, then the correct pronunciation is played back.
+- **Practice sessions**: one character card per turn. Before you answer, the card shows only the character: no pinyin, meaning or audio. Tap the mic once and say it.
+  - ✓ **Correct**: as soon as the app hears the right pronunciation, it stops listening and shows a check mark with a "pass" sound. You don't need to press stop.
+  - ✗ **Wrong**: if nothing you say matches within the time limit (**10 seconds** by default, adjustable to 5–20 s on the dashboard), the turn ends with a cross and a "wrong" sound, and the correct pronunciation is played.
+  - After each answer the card shows the pinyin and meaning, and 🔊 replays the sound.
 - **Spaced repetition**: every answer is recorded per character. The next card depends on your history. Missed and weak characters come back sooner, mastered ones less often, and new characters are mixed in gradually.
 - **Dashboard**: characters seen and mastered, accuracy, reviews due, a colour-coded grid of all 160 starter characters (common HSK 1–2), and recent sessions.
 
@@ -44,7 +45,7 @@ These cover pinyin parsing and pronunciation checking (`test/checker.test.js`), 
 
 ### Pronunciation checking
 
-The browser's speech recogniser (`lang = zh-CN`) turns what you said into Chinese text, returning up to five alternatives. The server ([`server/checker.js`](server/checker.js)) accepts the answer if any alternative:
+The browser's speech recogniser (`lang = zh-CN`, continuous with interim results) turns what you say into Chinese text, returning up to five alternatives for each phrase. While you speak, each new result is sent to `POST /api/sessions/:id/check`. That check records nothing, and the turn ends as correct the moment it matches. Browsers stop recognition by themselves after a pause, so the app restarts it until the time limit. When time runs out, everything heard is submitted and recorded as a wrong answer, unless it matches after all. The server ([`server/checker.js`](server/checker.js)) accepts an answer if any alternative:
 
 1. contains the target character, or
 2. contains a **homophone** with the same pinyin, using [`pinyin-pro`](https://github.com/zh-lx/pinyin-pro). For example, saying "tā" for 他 is accepted even if the recogniser writes 她.
@@ -102,7 +103,8 @@ test/                node:test suites
 | `GET` | `/api/stats` | totals, per-character progress, recent sessions |
 | `POST` | `/api/sessions` | `{size}` → starts a practice session (3–50 cards) |
 | `GET` | `/api/sessions/:id/next` | the current card, or a summary when the session is done |
-| `POST` | `/api/sessions/:id/answer` | `{charId, transcripts[], ignoreTones?, skipped?}` → result and updated progress |
+| `POST` | `/api/sessions/:id/check` | `{charId, transcripts[], ignoreTones?}` → `{correct, matchType}` for a live check while listening; nothing is recorded |
+| `POST` | `/api/sessions/:id/answer` | `{charId, transcripts[], ignoreTones?, skipped?, timedOut?}` → result and updated progress |
 
 ## Limitations
 
@@ -110,5 +112,6 @@ test/                node:test suites
 - **Online recognition**: Chrome and Edge send the audio to their cloud speech service, so speaking practice needs an internet connection. Safari may need Siri/Dictation enabled.
 - **Secure context**: the microphone works only on `https://` or `http://localhost`. To use the app from another device on your network, serve it over HTTPS.
 - **Tones**: the check relies on what the recogniser *thinks* you said. It works well for clear speech, but it is not a phonetic tone analyser. Single syllables are sometimes misheard, and the recogniser's language model can "fix" a wrong tone into the right character. Use **Ignore tones** if strict checking gets frustrating.
+- **Leniency while listening**: any matching syllable heard during the time limit counts. Saying many different syllables in a row can therefore hit a homophone by chance.
 - **Multiple readings**: characters with several readings are taught with their most common one (for example 的 = de). Saying the character itself is always accepted.
 - **Voices**: playback quality depends on the Chinese voices your OS or browser provides. If none is installed, the dashboard shows a warning.

@@ -218,6 +218,15 @@ body[data-view='practice'] #app { height: 100%; }
 .mic:active:not(:disabled) { transform: translateY(4px); box-shadow: 0 2px 0 var(--blue-dark); }
 .mic:disabled { opacity: 0.5; cursor: default; }
 .mic.listening { background: var(--red); box-shadow: 0 6px 0 var(--red-dark); animation: pulse 1.2s infinite; }
+.mic.listening:disabled { opacity: 1; }
+.countdown { width: 220px; height: 8px; border-radius: 99px; background: var(--line); overflow: hidden; }
+.countdown-fill { height: 100%; width: 100%; background: var(--red); border-radius: 99px; transform-origin: left; }
+.countdown-fill.running { animation: countdown linear forwards; }
+@keyframes countdown { to { transform: scaleX(0); } }
+.live-heard { min-height: 1.4em; font-size: 18px; font-weight: 700; color: var(--muted); }
+.toggle select {
+  font: inherit; font-size: 14px; padding: 4px 8px; border-radius: 10px; border: 2px solid var(--line); background: #fff; color: var(--ink);
+}
 @keyframes pulse {
   0% { box-shadow: 0 6px 0 var(--red-dark), 0 0 0 0 rgb(255 75 75 / 0.45); }
   70% { box-shadow: 0 6px 0 var(--red-dark), 0 0 0 22px rgb(255 75 75 / 0); }
