@@ -10,7 +10,8 @@ const host = process.env.HOST || 'localhost';
 
 const app = express();
 app.disable('x-powered-by');
-app.use(['/hanzi-cards', '/'], express.static(publicDir));
+app.use('/hanzi-cards', express.static(publicDir));
+app.use(express.static(publicDir));
 
 const server = app.listen(port, host, () => {
   console.log(`Hanzi Cards preview at http://${host}:${port}/ (also /hanzi-cards/)`);
