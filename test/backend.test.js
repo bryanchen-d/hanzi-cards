@@ -155,4 +155,17 @@ describe('practice sessions', () => {
     assert.equal(rambling.result.heard, '猫狗');
     assert.equal((await api.stats()).totals.attempts, 2);
   });
+
+  it('applies the requested matching strictness to live checks and answers', async () => {
+    const api = backend();
+    await api.register('accent', 'secret123');
+    const { session } = await api.startSession(3);
+    const { card } = await api.next(session.id);
+    assert.equal(card.hanzi, '一');
+    // 姨 is yí: same sound, different tone.
+    assert.equal((await api.check(session.id, { charId: card.id, transcripts: ['姨'], strictness: 'strict' })).correct, false);
+    assert.equal((await api.check(session.id, { charId: card.id, transcripts: ['姨'] })).correct, true, 'relaxed by default');
+    const strict = await api.answer(session.id, { charId: card.id, transcripts: ['姨'], strictness: 'strict' });
+    assert.deepEqual([strict.result.correct, strict.result.reason], [false, 'tone']);
+  });
 });

@@ -9,6 +9,7 @@ A Duolingo-style web app for learning the **3,000 most common Chinese characters
   - ✓ **Correct**: as soon as the app hears the right pronunciation, it stops listening and shows a check mark with a "pass" sound. You don't need to press stop.
   - ✗ **Wrong**: if nothing you say matches within the time limit (**10 seconds** by default, adjustable to 5–20 s on the dashboard), the turn ends with a cross and a "wrong" sound, and the correct pronunciation is played.
   - After each answer the card shows the pinyin and meaning, and 🔊 replays the sound.
+  - A tiny panda crawls along the blue progress bar as you work through the session. It holds still if your system asks for reduced motion.
 - **Spaced repetition**: every answer is recorded per character. The next card depends on your history. Missed and weak characters come back sooner, mastered ones less often, and new characters are mixed in gradually.
 - **Deck**: 3,000 characters (see [Character data](#character-data)). A curated beginner set of 160 (HSK 1–2: numbers, pronouns, everyday words) comes first, then the rest from most to least frequent.
 - **Dashboard**: characters seen and mastered, accuracy, reviews due, a colour-coded grid of the characters you've practised, the next ones coming up, and recent sessions.
@@ -51,14 +52,24 @@ Everything runs in the browser. [`public/js/lib/backend.js`](public/js/lib/backe
 
 ### Pronunciation checking
 
-The browser's speech recogniser (`lang = zh-CN`, continuous with interim results) turns what you say into Chinese text, returning up to five alternatives for each phrase. Each new result is checked right away. Live checks record nothing, and the turn ends as correct the moment one matches. Browsers stop recognition by themselves after a pause, so the app restarts it until the time limit. When time runs out, everything heard is submitted and recorded as a wrong answer, unless it matches after all.
+The browser's speech recogniser (`lang = zh-CN`, continuous with interim results) turns what you say into Chinese text, asking for up to ten alternatives per phrase (most browsers return fewer). Every interim and final result, with all its alternatives, is kept for the whole turn and checked right away, so a match is never lost when the recogniser later revises its guess. Live checks record nothing, and the turn ends as correct the moment one matches. Browsers stop recognition by themselves after a pause, so the app restarts it until the time limit. When time runs out, everything heard is submitted and recorded as a wrong answer, unless it matches after all.
 
 [`public/js/lib/checker.js`](public/js/lib/checker.js) accepts an answer if any alternative:
 
 1. contains the target character, or
 2. contains a **homophone** of any of the character's standard readings, using [`pinyin-pro`](https://github.com/zh-lx/pinyin-pro) to read the transcript. For example, saying "tā" for 他 is accepted even if the recogniser writes 她. For a polyphone like 行 (xíng / háng), either reading counts.
 
-Tones must match by default. When only the tone differs, the feedback says so. Turn on **Ignore tones** on the dashboard for a more forgiving check. The checker also maps digits the recogniser returns ("8" → 八). Latin-letter transcripts are ignored, because answers are spoken.
+How close the sound has to be depends on the **Matching** setting on the dashboard:
+
+| Level | Accepts |
+|---|---|
+| Strict | the same syllable with the same tone |
+| Normal | the same syllable with any tone |
+| **Relaxed** (default) | any tone, plus sounds that regional accents commonly merge: initials z/zh, c/ch, s/sh, n/l, r/l and f/h; finals an/ang, en/eng, in/ing, ian/iang and uan/uang |
+
+The character itself always passes, at every level. The checker picks the strictest match it finds. When a pass relied on leniency, the feedback says so gently, for example "Counted! It sounded like shān, close to the standard sān". In stricter levels, near misses get a hint instead. The setting is saved per device. The old "Ignore tones" checkbox was off by default, so everyone now starts on Relaxed.
+
+The checker also maps digits the recogniser returns ("8" → 八). Latin-letter transcripts are ignored, because answers are spoken.
 
 After you answer, the card shows the main reading, any other standard readings ("also …") and a short English gloss.
 
@@ -137,8 +148,8 @@ test/                   node:test suites
 - **Voice only**: there is no typing. Speech recognition works in Chrome, Edge and Safari, but not in Firefox, where **Start practice** is disabled and a message says which browsers work. If the microphone is blocked, the app shows how to allow it.
 - **Online recognition**: Chrome and Edge send the audio to their cloud speech service, so speaking practice needs an internet connection. Safari may need Siri/Dictation enabled.
 - **Secure context**: the microphone and Web Crypto work only on `https://` (such as GitHub Pages) or `http://localhost`.
-- **Tones**: the check relies on what the recogniser *thinks* you said. It works well for clear speech, but it is not a phonetic tone analyser. Single syllables are sometimes misheard, and the recogniser's language model can "fix" a wrong tone into the right character. Use **Ignore tones** if strict checking gets frustrating.
-- **Leniency while listening**: any matching syllable heard during the time limit counts. Saying many different syllables in a row can therefore hit a homophone by chance.
+- **Tones**: the check relies on what the recogniser *thinks* you said. It works well for clear speech, but it is not a phonetic tone analyser. Single syllables are sometimes misheard, and the recogniser's language model can "fix" a wrong tone into the right character.
+- **Leniency trade-off**: Relaxed matching, plus checking everything heard during the time limit, makes false passes a little more likely. Mumbling several syllables, or a near-sound like sì for shì, can be counted as correct. Choose **Normal** or **Strict** on the dashboard for tougher checking.
 - **Multiple readings**: any standard reading is accepted, so the check can't tell whether you used the right reading for a particular word.
 - **Meanings**: the English glosses for characters beyond the starter deck are brief dictionary definitions from Unihan. A few are archaic or unhelpful (for example 范 "bee-like insect").
 - **Rarer characters**: recognisers do best with common syllables. For rarer characters they often write a more common homophone, which still counts.

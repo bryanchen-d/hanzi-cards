@@ -164,12 +164,24 @@ button { font: inherit; color: inherit; }
 /* ---------- practice ---------- */
 body[data-view='practice'] #app { height: 100%; }
 .practice { min-height: 100%; display: flex; flex-direction: column; }
-.practice-top { display: flex; align-items: center; gap: 16px; padding: 20px 24px; max-width: 1000px; width: 100%; margin: 0 auto; }
-.progress { flex: 1; height: 16px; background: var(--line); border-radius: 99px; overflow: hidden; }
+.practice-top { display: flex; align-items: center; gap: 16px; padding: 30px 24px 18px; max-width: 1000px; width: 100%; margin: 0 auto; }
+.progress-track { position: relative; flex: 1; --panda-w: 40px; }
+.progress { height: 16px; background: var(--line); border-radius: 99px; overflow: hidden; }
 .progress-fill {
-  height: 100%; background: var(--green); border-radius: 99px; transition: width 0.4s ease;
+  height: 100%; width: calc(var(--p, 0) * 1%); background: var(--blue); border-radius: 99px; transition: width 0.6s ease;
   box-shadow: inset 0 -4px 0 rgb(0 0 0 / 0.08), inset 0 4px 0 rgb(255 255 255 / 0.25);
 }
+/* The panda's span runs from the track's left edge (0%) to its right edge (100%), so it never overflows. */
+.panda-rider {
+  position: absolute; bottom: 10px; width: var(--panda-w); height: calc(var(--panda-w) * 0.727);
+  left: calc((100% - var(--panda-w)) * var(--p, 0) / 100); transition: left 0.6s ease; pointer-events: none;
+}
+.panda { display: block; width: 100%; height: 100%; overflow: visible; animation: panda-bob 0.9s ease-in-out infinite alternate; }
+.panda .leg { transform-box: fill-box; transform-origin: 50% 15%; animation: panda-step 0.5s ease-in-out infinite alternate; }
+.panda .leg-b { animation-direction: alternate-reverse; }
+.panda-rider.moving .panda .leg { animation-duration: 0.16s; }
+@keyframes panda-bob { to { transform: translateY(-1.5px) rotate(-1.5deg); } }
+@keyframes panda-step { from { transform: rotate(-18deg); } to { transform: rotate(18deg); } }
 .progress-label { font-weight: 800; color: var(--muted); min-width: 44px; text-align: right; }
 .practice-main {
   flex: 1; display: flex; flex-direction: column; align-items: center; gap: 22px; padding: 10px 24px 170px;
@@ -299,7 +311,7 @@ body[data-view='practice'] #app { height: 100%; }
 }
 
 @media (max-height: 900px) {
-  .practice-top { padding-top: 14px; padding-bottom: 14px; }
+  .practice-top { padding-top: 26px; padding-bottom: 12px; }
   .practice-main { gap: 14px; }
   .prompt h2 { font-size: 21px; }
   .card { min-height: 230px; padding: 18px; }

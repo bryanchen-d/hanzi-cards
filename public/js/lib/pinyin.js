@@ -53,3 +53,17 @@ export function syllablesMatch(target, candidate, { ignoreTones = false } = {}) 
   if (candidate.tone === null) return target.tone === 0;
   return candidate.tone === target.tone;
 }
+
+/**
+ * Collapse sounds that regional accents commonly merge, so that two bases with
+ * the same key count as "close enough":
+ *   initials zh/z, ch/c, sh/s, n/l, r/l, f/h
+ *   finals   ang/an, eng/en, ing/in, iang/ian, uang/uan
+ */
+export function accentKey(base) {
+  return base
+    .replace(/^([zcs])h/, '$1')
+    .replace(/^[nr]/, 'l')
+    .replace(/^f/, 'h')
+    .replace(/([aei])ng$/, '$1n');
+}

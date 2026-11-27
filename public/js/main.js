@@ -1,4 +1,5 @@
 import { api, storageIsPersistent } from './api.js';
+import { DEFAULT_STRICTNESS, STRICTNESS_LEVELS } from './lib/checker.js';
 import { isFatalSpeechError, recognitionSupported, speechErrorMessage, startListening } from './speech.js';
 import { hasChineseVoice, speakChinese, ttsSupported } from './tts.js';
 import { playComplete, playFail, playPass, unlockAudio } from './sounds.js';
@@ -9,14 +10,28 @@ const MAX_BOX = 7;
 const SIZES = [5, 10, 20];
 const LISTEN_SECONDS = [5, 10, 15, 20];
 const DEFAULT_LISTEN_SECONDS = 10;
+const MAX_HEARD = 30;
 const storedListen = Number(localStorage.getItem('hz.listenSeconds'));
+const STRICTNESS_LABELS = {
+  strict: 'Strict — exact tones',
+  normal: 'Normal — any tone',
+  relaxed: 'Relaxed — accent-friendly',
+};
+
+// The old "Ignore tones" checkbox (hz.ignoreTones) was off by default; everyone now starts on the more forgiving default.
+function initialStrictness() {
+  const stored = localStorage.getItem('hz.strictness');
+  if (STRICTNESS_LEVELS.includes(stored)) return stored;
+  localStorage.removeItem('hz.ignoreTones');
+  return DEFAULT_STRICTNESS;
+}
 
 const state = {
   view: 'loading',
   user: null,
   stats: null,
   sessionSize: SIZES.includes(Number(localStorage.getItem('hz.size'))) ? Number(localStorage.getItem('hz.size')) : 10,
-  ignoreTones: localStorage.getItem('hz.ignoreTones') === '1',
+  strictness: initialStrictness(),
   listenSeconds: storedListen > 0 && storedListen <= 60 ? storedListen : DEFAULT_LISTEN_SECONDS,
   practice: null,
   summary: null,
@@ -34,6 +49,27 @@ const ICONS = {
 };
 
 const PRAISE = ['Nice!', 'Correct!', 'Great job!', 'Excellent!', '太好了!', 'Well said!'];
+
+// Hand-drawn panda (facing right, on all fours) that crawls along the session progress bar.
+const PANDA = `<svg class="panda" viewBox="0 0 44 32" aria-hidden="true">
+  <defs><clipPath id="panda-body-clip"><ellipse cx="19" cy="17" rx="13" ry="8.5"/></clipPath></defs>
+  <rect class="leg leg-b" x="12" y="18" width="5.5" height="10" rx="2.75" fill="#555"/>
+  <rect class="leg leg-a" x="28" y="18" width="5.5" height="10" rx="2.75" fill="#555"/>
+  <circle cx="6.6" cy="14.5" r="2.4" fill="#fff" stroke="#3c3c3c" stroke-width="1.2"/>
+  <ellipse cx="19" cy="17" rx="13" ry="8.5" fill="#fff" stroke="#3c3c3c" stroke-width="1.3"/>
+  <ellipse cx="27.5" cy="17" rx="5.5" ry="11" fill="#2b2b2b" clip-path="url(#panda-body-clip)"/>
+  <rect class="leg leg-a" x="8.5" y="19" width="5.5" height="10" rx="2.75" fill="#2b2b2b"/>
+  <rect class="leg leg-b" x="24.5" y="19" width="5.5" height="10" rx="2.75" fill="#2b2b2b"/>
+  <circle cx="29.5" cy="6" r="3.3" fill="#2b2b2b"/>
+  <circle cx="37.5" cy="5.6" r="3.3" fill="#2b2b2b"/>
+  <circle cx="34" cy="13" r="8.5" fill="#fff" stroke="#3c3c3c" stroke-width="1.3"/>
+  <ellipse cx="31.2" cy="12.6" rx="2.1" ry="2.8" fill="#2b2b2b" transform="rotate(20 31.2 12.6)"/>
+  <ellipse cx="37.2" cy="12.4" rx="2.4" ry="3.1" fill="#2b2b2b" transform="rotate(-22 37.2 12.4)"/>
+  <circle cx="31.6" cy="12.2" r="0.85" fill="#fff"/>
+  <circle cx="37.6" cy="11.9" r="0.95" fill="#fff"/>
+  <ellipse cx="39.6" cy="16.4" rx="1.5" ry="1.1" fill="#2b2b2b"/>
+  <circle cx="38" cy="18.6" r="1.3" fill="#ff9fb2" opacity="0.75"/>
+</svg>`;
 
 function levelLabel(box) {
   if (!box) return 'New';
@@ -181,8 +217,12 @@ function renderHome() {
           </div>
           <button class="btn btn-primary btn-big" data-action="start" ${recognitionSupported ? '' : 'disabled'}>Start practice</button>
           <label class="toggle">
-            <input type="checkbox" data-action="tones" ${state.ignoreTones ? 'checked' : ''}>
-            <span>Ignore tones (more forgiving)</span>
+            <span>Matching</span>
+            <select data-setting="strictness" aria-label="Pronunciation matching">
+              ${STRICTNESS_LEVELS.map(
+                (level) => `<option value="${level}" ${level === state.strictness ? 'selected' : ''}>${STRICTNESS_LABELS[level]}</option>`,
+              ).join('')}
+            </select>
           </label>
           <label class="toggle">
             <span>Time to answer</span>
@@ -321,7 +361,9 @@ async function startListeningTurn() {
   window.speechSynthesis?.cancel();
   const card = p.card;
   // One "turn" of listening; `concluded` guards against a late live-check and the timeout both submitting.
-  const turn = { concluded: false, checking: false, pending: null };
+  // `heard` keeps every transcript and alternative from this turn (newest first), so a match in an
+  // interim result is never lost even if the recogniser later revises it.
+  const turn = { concluded: false, checking: false, pending: false, heard: [] };
   p.turn = turn;
   p.phase = 'listening';
   p.message = '';
@@ -336,23 +378,27 @@ async function startListeningTurn() {
     submitAnswer(payload);
   };
 
-  const liveCheck = async (candidates) => {
+  const remember = (candidates) => {
+    turn.heard = [...new Set([...candidates, ...turn.heard])].slice(0, MAX_HEARD);
+  };
+
+  const liveCheck = async () => {
     if (turn.checking) {
-      turn.pending = candidates;
+      turn.pending = true;
       return;
     }
     turn.checking = true;
+    const transcripts = turn.heard;
     try {
-      const res = await api.check(p.id, { charId: card.id, transcripts: candidates, ignoreTones: state.ignoreTones });
-      if (res.correct) conclude({ transcripts: candidates });
+      const res = await api.check(p.id, { charId: card.id, transcripts, strictness: state.strictness });
+      if (res.correct) conclude({ transcripts });
     } catch {
       // ignore transient errors; the deadline still concludes the turn
     } finally {
       turn.checking = false;
       if (turn.pending && !turn.concluded) {
-        const next = turn.pending;
-        turn.pending = null;
-        liveCheck(next);
+        turn.pending = false;
+        liveCheck();
       }
     }
   };
@@ -371,13 +417,15 @@ async function startListeningTurn() {
       p.liveText = candidates[0] ?? '';
       const live = app.querySelector('.live-heard');
       if (live) live.textContent = p.liveText ? `Heard: ${p.liveText}` : '';
-      liveCheck(candidates);
+      remember(candidates);
+      liveCheck();
     },
   });
 
   try {
     const { reason, candidates } = await p.listener.done;
-    if (reason === 'timeout') conclude({ transcripts: candidates, timedOut: true });
+    remember(candidates);
+    if (reason === 'timeout') conclude({ transcripts: turn.heard, timedOut: true });
   } catch (err) {
     if (state.practice !== p || turn.concluded) return;
     turn.concluded = true;
@@ -395,7 +443,7 @@ async function submitAnswer(payload) {
   renderPractice();
   let data;
   try {
-    data = await api.answer(p.id, { charId: card.id, ignoreTones: state.ignoreTones, ...payload });
+    data = await api.answer(p.id, { charId: card.id, strictness: state.strictness, ...payload });
   } catch (err) {
     p.phase = 'ready';
     p.message = err.message;
@@ -448,6 +496,17 @@ function otherReadings(c) {
   return others.length ? `<div class="readings">also ${others.map(esc).join(' · ')}</div>` : '';
 }
 
+function feedbackTip(r) {
+  const heard = `<b>${esc(r.heardSyllable)}</b>`;
+  const standard = `<b>${esc(r.matchedReading)}</b>`;
+  let tip = '';
+  if (r.correct && r.lenient === 'tone') tip = `Counted! It sounded like ${heard}; the standard tone is ${standard}.`;
+  else if (r.correct && r.lenient === 'accent') tip = `Counted! It sounded like ${heard}, close to the standard ${standard}.`;
+  else if (r.reason === 'tone') tip = 'So close — the sound was right but the tone was different.';
+  else if (r.reason === 'accent') tip = `Close — that sounded like ${heard}. Relaxed matching accepts accents like this.`;
+  return tip ? `<div class="tip" data-testid="tip">${tip}</div>` : '';
+}
+
 function feedbackSheet(p) {
   const r = p.result;
   const c = p.card;
@@ -472,7 +531,7 @@ function feedbackSheet(p) {
               ? ''
               : `<div>Correct answer: <b lang="zh-CN">${esc(c.hanzi)}</b> <b>${esc(c.pinyin)}</b> — ${esc(c.meaning)}</div>`
           }
-          ${r.reason === 'tone' ? '<div class="tip">So close — the sound was right but the tone was different.</div>' : ''}
+          ${feedbackTip(r)}
         </div>
         <div class="sheet-actions">
           ${r.correct ? '' : `<button class="btn btn-ghost btn-icon" data-action="listen" aria-label="Hear it again">${ICONS.speaker}</button>`}
@@ -487,6 +546,8 @@ function renderPractice() {
   const c = p.card;
   const r = p.phase === 'feedback' ? p.result : null;
   const pct = Math.round((p.answered / p.size) * 100);
+  // The view is re-rendered from scratch, so start from the last shown progress and animate to the new one below.
+  const shownPct = p.shownPct ?? pct;
   // Before answering the card shows only the character: no pinyin, meaning or audio hints.
 
   let body = '<div class="spinner" aria-label="Loading"></div>';
@@ -513,8 +574,11 @@ function renderPractice() {
     <div class="practice">
       <div class="practice-top">
         <button class="icon-btn" data-action="exit" aria-label="End session">${ICONS.close}</button>
-        <div class="progress" role="progressbar" aria-valuemin="0" aria-valuemax="${p.size}" aria-valuenow="${p.answered}">
-          <div class="progress-fill" style="width:${pct}%"></div>
+        <div class="progress-track" style="--p:${shownPct}">
+          <div class="progress" role="progressbar" aria-valuemin="0" aria-valuemax="${p.size}" aria-valuenow="${p.answered}">
+            <div class="progress-fill"></div>
+          </div>
+          <div class="panda-rider" aria-hidden="true">${PANDA}</div>
         </div>
         <span class="progress-label">${p.answered}/${p.size}</span>
       </div>
@@ -525,6 +589,16 @@ function renderPractice() {
           : `<footer class="practice-footer"><button class="btn btn-ghost" data-action="skip" ${p.phase === 'ready' ? '' : 'disabled'}>Skip</button></footer>`
       }
     </div>`;
+
+  if (shownPct !== pct) {
+    const track = app.querySelector('.progress-track');
+    const rider = track.querySelector('.panda-rider');
+    void track.offsetWidth; // commit the old position so the change below transitions
+    track.style.setProperty('--p', pct);
+    rider.classList.add('moving');
+    setTimeout(() => rider.classList.remove('moving'), 700);
+  }
+  p.shownPct = pct;
 
   if (r) app.querySelector('[data-action=continue]')?.focus();
 }
@@ -588,10 +662,6 @@ const actions = {
     localStorage.setItem('hz.size', String(state.sessionSize));
     renderHome();
   },
-  tones: (el) => {
-    state.ignoreTones = el.checked;
-    localStorage.setItem('hz.ignoreTones', el.checked ? '1' : '0');
-  },
   start: () => startPractice(),
   home: () => showHome(),
   exit: () => exitPractice(),
@@ -617,6 +687,10 @@ app.addEventListener('click', (event) => {
 });
 
 app.addEventListener('change', (event) => {
+  if (event.target.dataset.setting === 'strictness') {
+    state.strictness = event.target.value;
+    localStorage.setItem('hz.strictness', state.strictness);
+  }
   if (event.target.dataset.setting === 'listen-seconds') {
     state.listenSeconds = Number(event.target.value) || DEFAULT_LISTEN_SECONDS;
     localStorage.setItem('hz.listenSeconds', String(state.listenSeconds));

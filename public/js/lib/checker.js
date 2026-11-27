@@ -1,10 +1,27 @@
 import { pinyin } from 'pinyin-pro';
-import { parseSyllable, syllablesMatch } from './pinyin.js';
+import { accentKey, parseSyllable } from './pinyin.js';
 
 const HAN = /\p{Script=Han}/u;
 const DIGITS = ['零', '一', '二', '三', '四', '五', '六', '七', '八', '九'];
-const MAX_CANDIDATES = 10;
+const MAX_CANDIDATES = 30;
 const MAX_CANDIDATE_LENGTH = 100;
+
+/**
+ * How forgiving matching is:
+ * - strict:  same sound and same tone
+ * - normal:  same sound, any tone
+ * - relaxed: any tone, and common accent mergers count too (see accentKey)
+ */
+export const STRICTNESS_LEVELS = ['strict', 'normal', 'relaxed'];
+export const DEFAULT_STRICTNESS = 'relaxed';
+
+// Match ranks, best first. A rank is allowed when it is <= the level's limit.
+const RANK = { exact: 0, homophone: 1, tone: 2, accent: 3 };
+const LIMIT = { strict: RANK.homophone, normal: RANK.tone, relaxed: RANK.accent };
+
+export function normalizeStrictness(value) {
+  return STRICTNESS_LEVELS.includes(value) ? value : DEFAULT_STRICTNESS;
+}
 
 // Speech recognisers often return Arabic numerals for spoken numbers ("8" for 八).
 function digitsToHanzi(text) {
@@ -17,26 +34,33 @@ function clean(text) {
 
 function readingsOf(ch) {
   return pinyin(ch, { multiple: true, type: 'array' })
-    .map((r) => parseSyllable(r, { bareIsNeutral: true }))
-    .filter(Boolean);
+    .map((text) => ({ text, syllable: parseSyllable(text, { bareIsNeutral: true }) }))
+    .filter((r) => r.syllable);
 }
 
-// Only Chinese characters in the transcript count; recognisers sometimes return Latin text for unclear speech.
-function evaluate(target, raw, ignoreTones) {
+/** Best (lowest-rank) match in one transcript. Only Chinese characters count, since answers are spoken. */
+function bestMatch(target, raw) {
   const text = clean(raw);
-  if (!text) return { correct: false, nearTone: false };
-  if (text.includes(target.hanzi)) return { correct: true, matchType: 'exact' };
+  if (!text) return null;
+  if (text.includes(target.hanzi)) return { rank: RANK.exact };
 
-  let nearTone = false;
+  let best = null;
   for (const ch of [...text].filter((c) => HAN.test(c))) {
     for (const reading of readingsOf(ch)) {
-      for (const syllable of target.syllables) {
-        if (syllablesMatch(syllable, reading, { ignoreTones })) return { correct: true, matchType: 'homophone' };
-        if (reading.base === syllable.base) nearTone = true;
+      for (const t of target.readings) {
+        let rank = null;
+        if (reading.syllable.base === t.syllable.base) {
+          rank = reading.syllable.tone === t.syllable.tone ? RANK.homophone : RANK.tone;
+        } else if (accentKey(reading.syllable.base) === accentKey(t.syllable.base)) {
+          rank = RANK.accent;
+        }
+        if (rank !== null && (!best || rank < best.rank)) {
+          best = { rank, heardSyllable: reading.text, matchedReading: t.text };
+        }
       }
     }
   }
-  return { correct: false, nearTone };
+  return best;
 }
 
 export function toPinyin(text) {
@@ -44,14 +68,17 @@ export function toPinyin(text) {
 }
 
 /**
- * Decide whether what the learner said (one or more speech-recognition
- * alternatives) is an acceptable pronunciation of `character`.
+ * Decide whether what the learner said (speech-recognition alternatives and
+ * interim results) is an acceptable pronunciation of `character`.
  *
- * Accepted: a transcript contains the character itself, or a homophone of any
- * of its standard readings (`character.readings`, falling back to
- * `character.pinyin`). Tones must match unless `ignoreTones`.
+ * A transcript containing the character itself always passes. Otherwise it
+ * passes if it contains a homophone of any of the character's standard
+ * readings (`character.readings`, falling back to `character.pinyin`), within
+ * the chosen `strictness`. The strictest available match wins, and
+ * `lenient` ('tone' | 'accent' | null) says whether the pass relied on leniency.
  */
-export function checkPronunciation(character, candidates, { ignoreTones = false } = {}) {
+export function checkPronunciation(character, candidates, { strictness = DEFAULT_STRICTNESS } = {}) {
+  const level = normalizeStrictness(strictness);
   const list = (Array.isArray(candidates) ? candidates : [candidates])
     .filter((c) => typeof c === 'string')
     .slice(0, MAX_CANDIDATES)
@@ -61,28 +88,33 @@ export function checkPronunciation(character, candidates, { ignoreTones = false 
   const readings = character.readings?.length ? character.readings : [character.pinyin];
   const target = {
     hanzi: character.hanzi,
-    syllables: readings.map((r) => parseSyllable(r, { bareIsNeutral: true })).filter(Boolean),
+    readings: readings.map((text) => ({ text, syllable: parseSyllable(text, { bareIsNeutral: true }) })).filter((r) => r.syllable),
   };
   const heard = list[0] ?? '';
-  const base = { heard, heardPinyin: heard ? toPinyin(heard) : '' };
+  const base = { heard, heardPinyin: heard ? toPinyin(heard) : '', lenient: null };
 
   if (list.length === 0) {
     return { ...base, correct: false, matchType: null, reason: 'empty' };
   }
 
-  let nearTone = false;
+  let best = null;
   for (const candidate of list) {
-    const outcome = evaluate(target, candidate, ignoreTones);
-    if (outcome.correct) {
-      return {
-        correct: true,
-        matchType: outcome.matchType,
-        heard: candidate,
-        heardPinyin: toPinyin(candidate),
-        reason: null,
-      };
-    }
-    nearTone ||= outcome.nearTone;
+    const match = bestMatch(target, candidate);
+    if (match && (!best || match.rank < best.rank)) best = { ...match, candidate };
   }
-  return { ...base, correct: false, matchType: null, reason: nearTone ? 'tone' : 'mismatch' };
+
+  if (best && best.rank <= LIMIT[level]) {
+    return {
+      correct: true,
+      matchType: best.rank === RANK.exact ? 'exact' : 'homophone',
+      lenient: best.rank === RANK.tone ? 'tone' : best.rank === RANK.accent ? 'accent' : null,
+      heard: best.candidate,
+      heardPinyin: toPinyin(best.candidate),
+      heardSyllable: best.heardSyllable ?? null,
+      matchedReading: best.matchedReading ?? null,
+      reason: null,
+    };
+  }
+  const reason = best?.rank === RANK.tone ? 'tone' : best?.rank === RANK.accent ? 'accent' : 'mismatch';
+  return { ...base, correct: false, matchType: null, reason, heardSyllable: best?.heardSyllable ?? null };
 }

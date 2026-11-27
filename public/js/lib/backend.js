@@ -283,7 +283,7 @@ export function createBackend({ storage = createMemoryStorage(), now = () => Dat
     async check(id, payload = {}) {
       const user = requireUser();
       const { character } = currentCard(load(user.id), id, payload.charId);
-      const result = checkPronunciation(character, candidatesFrom(payload), { ignoreTones: Boolean(payload.ignoreTones) });
+      const result = checkPronunciation(character, candidatesFrom(payload), { strictness: payload.strictness });
       return { correct: result.correct, matchType: result.matchType };
     },
 
@@ -302,7 +302,7 @@ export function createBackend({ storage = createMemoryStorage(), now = () => Dat
       } else if (candidates.length === 0) {
         result = { correct: false, matchType: 'timeout', heard: '', heardPinyin: '', reason: 'timeout' };
       } else {
-        result = checkPronunciation(character, candidates, { ignoreTones: Boolean(payload.ignoreTones) });
+        result = checkPronunciation(character, candidates, { strictness: payload.strictness });
         if (payload.timedOut && !result.correct) result.timedOut = true;
       }
 

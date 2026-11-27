@@ -33,7 +33,7 @@ function speechError(code) {
   return err;
 }
 
-const MAX_CANDIDATES = 10;
+const MAX_CANDIDATES = 15;
 const MAX_RESTARTS = 30;
 
 /**
@@ -88,7 +88,7 @@ export function startListening({ lang = 'zh-CN', timeoutMs = 10000, onStart, onR
     rec.lang = lang;
     rec.continuous = true;
     rec.interimResults = true;
-    rec.maxAlternatives = 5;
+    rec.maxAlternatives = 10;
     let runText = '';
     let fatal = null;
 
